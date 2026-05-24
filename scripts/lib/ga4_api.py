@@ -75,9 +75,11 @@ class GA4API:
         location = os.getenv("GA4_BQ_LOCATION", "").strip() or None
         if not pid:
             raise GA4NotConfigured("GA4_PROPERTY_ID 미설정")
-        if cred and not os.path.exists(cred):
+        if not cred:
+            raise GA4NotConfigured("GOOGLE_APPLICATION_CREDENTIALS 미설정 (SA JSON 경로). Streamlit Cloud에서는 BQ 자격증명을 별도로 주입해야 함")
+        if not os.path.exists(cred):
             raise GA4NotConfigured(f"GOOGLE_APPLICATION_CREDENTIALS 경로 없음: {cred}")
-        return cls(pid, cred or None, project, dataset, location)
+        return cls(pid, cred, project, dataset, location)
 
     # ─────────────────────────────────────────────
     # 핵심 fetch 메서드 (반환 shape는 GA4 Data API 버전과 동일)
