@@ -1,0 +1,30 @@
+﻿{
+  "adset_id": "120246857035040462",
+  "adset_name": "버거리_메인_유사1%_v2",
+  "campaign_id": "120246607340150462",
+  "campaign_name": "버거리_가맹모집_2026.05",
+  "placement": "facebook_feed + instagram_feed",
+  "optimization_event": "COMPLETE_REGISTRATION",
+  "pixel_id": "925376043867902",
+  "audience": "LLA 1% (120246608423150462)",
+  "url_tags": "utm_source={{site_source_name}}&utm_medium=paid_social&utm_campaign={{campaign.name}}&utm_content={{ad.name}}&utm_term={{adset.name}}&placement={{placement}}&ad_id={{ad.id}}",
+  "ads": [
+    {
+      "name": "자영업자스토리_v2_A안",
+      "ad_id": "120246857035930462",
+      "creative_id": "2709349032777125"
+    },
+    {
+      "name": "자영업자스토리_v2_B안",
+      "ad_id": "120246857036880462",
+      "creative_id": "1478832553928805"
+    }
+  ],
+  "status": "PAUSED",
+  "notes": [
+    "도메인 인증 풀린 후 + 캠페인 daily_budget 검토 후 ACTIVE",
+    "OUTCOME_SALES 캠페인 제약으로 LEAD 이벤트 사용 불가. CompleteRegistration 유지",
+    "LEAD 최적화 원하면 새 캠페인을 OUTCOME_LEADS로 만들어야 함",
+    "CBO라 광고세트 daily_budget 박지 못함. 캠페인 예산 80000원 → 3만원 줄이려면 메타 UI에서 캠페인 수정"
+  ]
+}

@@ -1,0 +1,29 @@
+﻿{
+  "campaign_id": "120246861138400462",
+  "campaign_name": "버거리_가맹모집_LEADS_2026.05",
+  "campaign_objective": "OUTCOME_LEADS",
+  "adset_id": "120246861138530462",
+  "adset_name": "버거리_메인_유사1%_LEADS",
+  "daily_budget_krw": 30000,
+  "destination_type": "WEBSITE",
+  "landing_url": "https://burgerry.co.kr/",
+  "optimization": "LEAD (OFFSITE_CONVERSIONS)",
+  "pixel_id": "925376043867902",
+  "placement": "facebook_feed + instagram_feed",
+  "audience": "LLA 1% (120246608423150462)",
+  "url_tags": "utm_source={{site_source_name}}&utm_medium=paid_social&utm_campaign={{campaign.name}}&utm_content={{ad.name}}&utm_term={{adset.name}}&placement={{placement}}&ad_id={{ad.id}}",
+  "ads": [
+    {
+      "name": "자영업자스토리_LEADS_A안",
+      "ad_id": "120246861139280462",
+      "creative_id": "2709349032777125"
+    },
+    {
+      "name": "자영업자스토리_LEADS_B안",
+      "ad_id": "120246861140020462",
+      "creative_id": "1478832553928805"
+    }
+  ],
+  "status": "PAUSED",
+  "created": "2026-05-24"
+}

@@ -1,0 +1,86 @@
+{
+  "_comment": "이 파일은 scripts/meta_00_discover.py가 자동으로 채웁니다. 수동 편집은 managed 영역만 (자동화 대상 토글, 별칭 등). discovered 영역은 매번 덮어쓰기됨.",
+  "_schema": {
+    "managed": "[{ad_set_id, alias, enabled, target_daily_budget_krw}] — pruner가 관리할 ad set 목록. enabled=false면 건너뜀.",
+    "discovered": "[{ad_set_id, name, campaign_id, campaign_name, status, daily_budget_krw, optimization_goal, created_time}] — discover 스크립트가 매번 갱신."
+  },
+  "managed": [
+    {
+      "ad_set_id": "120246621076340462",
+      "alias": "LLA_1pct",
+      "enabled": true,
+      "target_daily_budget_krw": 0
+    },
+    {
+      "ad_set_id": "120246607340160462",
+      "alias": "LLA_3pct",
+      "enabled": true,
+      "target_daily_budget_krw": 0
+    }
+  ],
+  "discovered": [
+    {
+      "ad_set_id": "120246621076340462",
+      "name": "버거리_메인_유사1%",
+      "campaign_id": "120246607340150462",
+      "campaign_name": "버거리_가맹모집_2026.05",
+      "status": "ACTIVE",
+      "effective_status": "ACTIVE",
+      "daily_budget_krw": 0,
+      "optimization_goal": "OFFSITE_CONVERSIONS",
+      "billing_event": "IMPRESSIONS",
+      "promoted_object": {
+        "pixel_id": "925376043867902",
+        "custom_event_type": "COMPLETE_REGISTRATION",
+        "smart_pse_enabled": false
+      },
+      "ad_count": 2,
+      "ads": [
+        {
+          "id": "120246621076350462",
+          "name": "자영업자스토리_1%_A안",
+          "status": "ACTIVE"
+        },
+        {
+          "id": "120246621076360462",
+          "name": "자영업자스토리_1%_B안",
+          "status": "ACTIVE"
+        }
+      ],
+      "created_time": "2026-05-20T00:32:36+0000",
+      "start_time": "2026-05-20T00:32:37+0000"
+    },
+    {
+      "ad_set_id": "120246607340160462",
+      "name": "버거리_메인_유사3%",
+      "campaign_id": "120246607340150462",
+      "campaign_name": "버거리_가맹모집_2026.05",
+      "status": "ACTIVE",
+      "effective_status": "ACTIVE",
+      "daily_budget_krw": 0,
+      "optimization_goal": "OFFSITE_CONVERSIONS",
+      "billing_event": "IMPRESSIONS",
+      "promoted_object": {
+        "pixel_id": "925376043867902",
+        "custom_event_type": "COMPLETE_REGISTRATION",
+        "smart_pse_enabled": false
+      },
+      "ad_count": 2,
+      "ads": [
+        {
+          "id": "120246607340170462",
+          "name": "자영업자스토리_3%_A안",
+          "status": "ACTIVE"
+        },
+        {
+          "id": "120246607557320462",
+          "name": "자영업자스토리_3%_B안",
+          "status": "ACTIVE"
+        }
+      ],
+      "created_time": "2026-05-20T00:32:36+0000",
+      "start_time": "2026-05-20T00:32:37+0000"
+    }
+  ],
+  "last_discovered_at": "2026-05-20T09:45:52"
+}

@@ -1,0 +1,66 @@
+﻿{
+  "funnel": "TRAFFIC(콜드 유사1%) → 사이트방문(픽셀) → LEADS(웜 리타게팅)",
+  "all_status": "PAUSED",
+  "created": "2026-05-24",
+  "url_tags": "utm_source={{site_source_name}}&utm_medium=paid_social&utm_campaign={{campaign.name}}&utm_content={{ad.name}}&utm_term={{adset.name}}&placement={{placement}}&ad_id={{ad.id}}",
+  "traffic": {
+    "campaign_id": "120246861172080462",
+    "campaign_name": "버거리_가맹모집_TRAFFIC_2026.05",
+    "campaign_objective": "OUTCOME_TRAFFIC",
+    "adset_id": "120246861178250462",
+    "adset_name": "버거리_TRAFFIC_유사1%",
+    "daily_budget_krw": 50000,
+    "optimization": "LANDING_PAGE_VIEWS",
+    "attribution": "Click 1일",
+    "audience": "LLA 1% (120246608423150462)",
+    "placement": "facebook_feed + instagram_feed",
+    "ads": [
+      {
+        "name": "자영업자스토리_TRAFFIC_A안",
+        "ad_id": "120246861178590462",
+        "creative_id": "2709349032777125"
+      },
+      {
+        "name": "자영업자스토리_TRAFFIC_B안",
+        "ad_id": "120246861186520462",
+        "creative_id": "1478832553928805"
+      }
+    ]
+  },
+  "leads": {
+    "campaign_id": "120246861138400462",
+    "campaign_name": "버거리_가맹모집_LEADS_2026.05",
+    "campaign_objective": "OUTCOME_LEADS",
+    "adset_id": "120246861138530462",
+    "adset_name": "버거리_LEADS_사이트방문자",
+    "daily_budget_krw": 30000,
+    "optimization": "LEAD (OFFSITE_CONVERSIONS)",
+    "attribution": "Click 7일 + View 1일",
+    "audience": "사이트방문자_30일 (120246861325400462)",
+    "placement": "facebook_feed + instagram_feed",
+    "destination_type": "WEBSITE",
+    "landing_url": "https://burgerry.co.kr/",
+    "pixel_id": "925376043867902",
+    "ads": [
+      {
+        "name": "자영업자스토리_LEADS_A안",
+        "ad_id": "120246861139280462",
+        "creative_id": "2709349032777125"
+      },
+      {
+        "name": "자영업자스토리_LEADS_B안",
+        "ad_id": "120246861140020462",
+        "creative_id": "1478832553928805"
+      }
+    ]
+  },
+  "custom_audience": {
+    "id": "120246861325400462",
+    "name": "버거리_사이트방문자_30일",
+    "retention_days": 30,
+    "source": "pixel 925376043867902 url contains burgerry.co.kr",
+    "created": "2026-05-24"
+  },
+  "total_daily_budget_krw": 80000,
+  "budget_split": "TRAFFIC 50,000원 + LEADS 30,000원 = 80,000원 (기존과 동일)"
+}
