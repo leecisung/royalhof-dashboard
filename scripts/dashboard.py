@@ -31,16 +31,25 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 
 st.set_page_config(page_title="광고 통합 대시보드", layout="wide", initial_sidebar_state="expanded")
 
+# 즉시 화면 확인용 디버그 마커 — 부팅 성공 신호
+_debug = st.empty()
+_debug.write("⏳ 초기화 중...")
+
 # ─────────────────────────────────────────────
 # Streamlit secrets → os.environ (Cloud 배포 시 .env 대체)
 # ─────────────────────────────────────────────
 
+_secrets_loaded = 0
 try:
-    for _k, _v in dict(st.secrets).items():
+    for _k in list(st.secrets.keys()):
+        _v = st.secrets[_k]
         if isinstance(_v, (str, int, float)) and _k not in os.environ:
             os.environ[_k] = str(_v)
-except Exception:
-    pass
+            _secrets_loaded += 1
+except Exception as _e:
+    _debug.error(f"secrets 로드 실패: {_e}")
+
+_debug.write(f"✅ secrets {_secrets_loaded}개 로드됨. 다음 단계 진행…")
 
 # ─────────────────────────────────────────────
 # 비밀번호 게이트 (DASHBOARD_PASSWORD 설정된 경우만 작동)
@@ -65,8 +74,12 @@ def _check_password() -> bool:
     return False
 
 
+_debug.write(f"🔐 비밀번호 게이트 진입 (env DASHBOARD_PASSWORD 존재: {bool(os.getenv('DASHBOARD_PASSWORD'))})")
+
 if not _check_password():
     st.stop()
+
+_debug.write("✅ 인증 통과. 대시보드 본문 로딩…")
 
 # ─────────────────────────────────────────────
 # Sidebar — 기간/브랜드 컨트롤
