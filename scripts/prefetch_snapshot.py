@@ -24,7 +24,7 @@ ROOT = Path(__file__).parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from dotenv import load_dotenv
-from lib.dashboard_data import fetch_naver, fetch_meta, fetch_ga4
+from lib.dashboard_data import fetch_naver, fetch_meta, fetch_ga4, NAVER_ACCOUNTS, _naver_api
 
 load_dotenv(ROOT / ".env")
 

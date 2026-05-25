@@ -463,9 +463,9 @@ def naver_detail(
 
     # 계정별 정보 (라벨 + KPI 3주) — 사용자 요청 3계정
     account_labels = [
-        "로얄호프치킨(파워링크)",
-        "새 버거리(보승에프앤비)",
-        "(구)버거리",
+        "로얄호프치킨 가맹광고 (파워링크)",
+        "버거리 (보승에프앤비)",
+        "구 파워링크 (미사용)",
     ]
     accounts_summary = []
     for label in account_labels:
