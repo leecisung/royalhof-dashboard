@@ -578,4 +578,13 @@ def action_naver_delete_keyword(
 
 @app.get("/healthz", response_class=JSONResponse)
 def healthz():
-    return {"ok": True}
+    snap_exists = SNAPSHOT_PATH.exists()
+    snap_size = SNAPSHOT_PATH.stat().st_size if snap_exists else 0
+    return {
+        "ok": True,
+        "snapshot_path": str(SNAPSHOT_PATH),
+        "snapshot_exists": snap_exists,
+        "snapshot_size": snap_size,
+        "cwd": os.getcwd(),
+        "root": str(ROOT),
+    }
