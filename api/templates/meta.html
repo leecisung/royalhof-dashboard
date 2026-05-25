@@ -58,6 +58,73 @@
     </div>
   </div>
 
+  <!-- 🎯 결정 요약 -->
+  <div class="card">
+    <h2>🎯 ad set 결정 요약 <span class="meta">킬 / 고쳐 / 유지 / 증액 / 학습</span></h2>
+    <div class="kpi-grid" style="grid-template-columns:repeat(5, 1fr)">
+      <div class="kpi"><div class="label">🛑 KILL</div><div class="value" style="color:var(--neg)">{{ verdict_counts['🛑 KILL'] }}</div><div class="sub">즉시 Pause</div></div>
+      <div class="kpi"><div class="label">⚠️ FIX</div><div class="value" style="color:#d97706">{{ verdict_counts['⚠️ FIX'] }}</div><div class="sub">예산·소재 조치</div></div>
+      <div class="kpi"><div class="label">✅ KEEP</div><div class="value">{{ verdict_counts['✅ KEEP'] }}</div><div class="sub">현 예산 유지</div></div>
+      <div class="kpi"><div class="label">🚀 BOOST</div><div class="value" style="color:var(--pos)">{{ verdict_counts['🚀 BOOST'] }}</div><div class="sub">예산 30% 증액</div></div>
+      <div class="kpi"><div class="label">🌱 LEARNING</div><div class="value">{{ verdict_counts['🌱 LEARNING'] }}</div><div class="sub">14일 후 재평가</div></div>
+    </div>
+  </div>
+
+  <!-- 💡 종합 전략 제언 -->
+  <div class="card">
+    <h2>💡 종합 전략 제언</h2>
+    <ul style="line-height:1.7">
+      {% for note in strategy_notes %}
+        <li>{{ note | safe }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+
+  <!-- 🌐 Placement Mix -->
+  <div class="card">
+    <h2>🌐 Placement Mix <span class="meta">FB / IG / Audience Network / Messenger</span></h2>
+    <p style="font-size:12px;color:var(--muted);margin:0 0 10px">
+      Audience Network 는 단가가 싸 보여도 가맹 리드처럼 고관여 전환에는 거의 기여 못함.
+      비중 30%↑면 manual placement 로 분리·OFF 권장.
+    </p>
+    {% if placement_analysis.by_platform %}
+    <table>
+      <thead><tr>
+        <th class="left">Placement</th>
+        <th>지출</th><th>비중</th>
+        <th>노출</th><th>클릭</th><th>CTR</th>
+        <th>리드</th><th>CPL</th>
+      </tr></thead>
+      <tbody>
+        {% for p in placement_analysis.by_platform %}
+          {% set is_an = p.publisher_platform == 'audience_network' %}
+          <tr {% if is_an and p.share >= 0.30 %}style="background:rgba(220,38,38,0.08)"{% endif %}>
+            <td class="left">
+              <strong>
+              {% if p.publisher_platform == 'facebook' %}Facebook
+              {% elif p.publisher_platform == 'instagram' %}Instagram
+              {% elif p.publisher_platform == 'audience_network' %}🚨 Audience Network
+              {% elif p.publisher_platform == 'messenger' %}Messenger
+              {% else %}{{ p.publisher_platform }}
+              {% endif %}
+              </strong>
+            </td>
+            <td>{{ "{:,}".format(p.spend) }}원</td>
+            <td><strong>{{ "%.0f"|format(p.share * 100) }}%</strong></td>
+            <td>{{ "{:,}".format(p.impressions) }}</td>
+            <td>{{ "{:,}".format(p.clicks) }}</td>
+            <td>{{ "%.2f"|format(p.ctr) }}%</td>
+            <td>{{ p.conversions }}</td>
+            <td>{% if p.conversions %}{{ "{:,}".format(p.cpa) }}원{% else %}-{% endif %}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p style="color:var(--muted)">Placement 데이터 fetch 실패 또는 빈 결과. (Meta API 권한·트래픽 부족 확인)</p>
+    {% endif %}
+  </div>
+
   <!-- AI 인사이트 -->
   <div class="card">
     <h2>🤖 인사이트 <span class="meta">룰베이스 자동 생성</span></h2>
@@ -116,41 +183,61 @@
     </table>
   </div>
 
-  <!-- Ad Set 단위 (액션 버튼) -->
+  <!-- Ad Set 단위 (심층 진단) -->
   <div class="card">
-    <h2>광고 그룹(Ad Set) | 예산 권고 + 액션 | 대시보드</h2>
+    <h2>광고 그룹(Ad Set) 심층 진단 <span class="meta">결정 · 근거 · 학습 · 즉시 조치</span></h2>
+    <p style="font-size:12px;color:var(--muted);margin:0 0 10px">
+      각 ad set에 대한 종합 결정. 학습 진척률은 Meta Conversion 최적화 안정화 기준(50 conv/7d).
+      AN% 는 해당 ad set의 spend 중 Audience Network 비중.
+    </p>
     <table>
       <thead><tr>
         <th class="left">광고그룹</th>
-        <th class="left">예산 권고</th>
+        <th class="left">🎯 결정</th>
+        <th class="left">근거 · 즉시 조치</th>
+        <th class="left">학습</th>
         <th>지출</th><th>리드</th><th>CPL</th>
-        <th>클릭</th><th>CPC</th>
-        <th>CTR</th><th>freq</th>
+        <th>freq</th><th>AN%</th>
         {% if has_password %}<th>액션</th>{% endif %}
       </tr></thead>
       <tbody>
         {% for a in ad_sets %}
-          {% set a_cpc = (a.spend / a.clicks) | int if a.clicks else 0 %}
+          {% set d = a.diagnosis %}
+          {% set verdict_class = 'learning' %}
+          {% if '🛑 KILL' in d.verdict %}{% set verdict_class = 'kill' %}
+          {% elif '⚠️ FIX' in d.verdict %}{% set verdict_class = 'declining' %}
+          {% elif '🚀 BOOST' in d.verdict %}{% set verdict_class = 'winner' %}
+          {% elif '✅ KEEP' in d.verdict %}{% set verdict_class = 'increase' %}
+          {% endif %}
           <tr>
             <td class="left">
-              {{ a.ad_set_name }}
+              <strong>{{ a.ad_set_name }}</strong>
               <div style="font-size:11px;color:var(--muted)">{{ a.campaign_name }}</div>
             </td>
             <td class="left">
-              <span class="badge {{ a.budget_decision|lower }}">{{ a.budget_decision }}</span>
-              <div style="font-size:11px;color:var(--muted);margin-top:2px">{{ a.budget_reason }}</div>
+              <span class="badge {{ verdict_class }}">{{ d.verdict }}</span>
+            </td>
+            <td class="left" style="font-size:12px">
+              {% for r in d.reasons %}<div>· {{ r | safe }}</div>{% endfor %}
+              {% for ac in d.actions %}<div style="color:var(--accent);margin-top:2px">→ {{ ac }}</div>{% endfor %}
+            </td>
+            <td class="left" style="font-size:12px">
+              {{ d.learning_status }}
+              {% if d.learning_progress < 1 %}
+              <div style="background:#e5e7eb;height:4px;border-radius:2px;margin-top:4px;width:80px">
+                <div style="background:var(--accent);height:100%;width:{{ (d.learning_progress * 100) | int }}%;border-radius:2px"></div>
+              </div>
+              {% endif %}
             </td>
             <td>{{ "{:,}".format(a.spend_int) }}원</td>
             <td>{{ a.conversions }}</td>
             <td>{% if a.conversions %}{{ "{:,}".format(a.cpa_int) }}원{% else %}-{% endif %}</td>
-            <td>{{ "{:,}".format(a.clicks) }}</td>
-            <td>{{ "{:,}".format(a_cpc) }}원</td>
-            <td>{{ "%.2f"|format(a.ctr) }}%</td>
-            <td>{{ "%.2f"|format(a.frequency) }}</td>
+            <td {% if a.frequency >= 3 %}style="color:var(--neg);font-weight:600"{% endif %}>{{ "%.2f"|format(a.frequency) }}</td>
+            <td {% if a.an_pct >= 0.40 %}style="color:var(--neg);font-weight:600"{% elif a.an_pct >= 0.25 %}style="color:#d97706"{% endif %}>{{ "%.0f"|format(a.an_pct * 100) }}%</td>
             {% if has_password %}
             <td>
-              {% if a.budget_decision in ['Pause', 'Decrease'] %}
-              <form method="post" action="/actions/meta/pause-adset" style="display:inline" onsubmit="return confirm('정말 일시정지하시겠습니까?\n{{ a.ad_set_name }}\n사유: {{ a.budget_reason }}')">
+              {% if '🛑 KILL' in d.verdict or '⚠️ FIX' in d.verdict %}
+              <form method="post" action="/actions/meta/pause-adset" style="display:inline" onsubmit="return confirm('정말 일시정지하시겠습니까?\n{{ a.ad_set_name }}\n결정: {{ d.verdict }}')">
                 <input type="hidden" name="ad_set_id" value="{{ a.ad_set_id }}">
                 <button type="submit" class="btn-action danger">⏸ Pause</button>
               </form>

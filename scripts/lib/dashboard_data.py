@@ -340,6 +340,60 @@ def fetch_meta_ads(since: date, until: date) -> list[dict]:
     return out
 
 
+def fetch_meta_placements(since: date, until: date) -> list[dict]:
+    """
+    Meta ad set × publisher_platform 별 breakdown.
+
+    publisher_platform 값: 'facebook' | 'instagram' | 'audience_network' | 'messenger'
+
+    반환: [{ad_set_id, ad_set_name, campaign_id, campaign_name,
+            publisher_platform, impressions, clicks, spend, conversions}]
+    """
+    from lib.meta_api import MetaAdsAPI
+    from facebook_business.adobjects.adaccount import AdAccount
+    from facebook_business.adobjects.adsinsights import AdsInsights
+    try:
+        api = MetaAdsAPI.from_env()
+    except Exception as e:
+        logger.warning("[Meta] placement API init 실패: %s", e)
+        return []
+    acct = AdAccount(api.ad_account_id)
+    params = {
+        "time_range": {"since": str(since), "until": str(until)},
+        "level": "adset",
+        "breakdowns": ["publisher_platform"],
+        "limit": 500,
+    }
+    fields = [
+        AdsInsights.Field.adset_id, AdsInsights.Field.adset_name,
+        AdsInsights.Field.campaign_id, AdsInsights.Field.campaign_name,
+        AdsInsights.Field.impressions, AdsInsights.Field.clicks,
+        AdsInsights.Field.spend,
+        AdsInsights.Field.actions,
+    ]
+    try:
+        cursor = api._call(acct.get_insights, fields=fields, params=params)
+    except Exception as e:
+        logger.warning("[Meta] placement insights 실패: %s", e)
+        return []
+    out = []
+    for r in cursor:
+        d = dict(r)
+        conv = api._extract_conversions(d.get("actions", []))
+        out.append({
+            "ad_set_id": d.get("adset_id", ""),
+            "ad_set_name": d.get("adset_name", ""),
+            "campaign_id": d.get("campaign_id", ""),
+            "campaign_name": d.get("campaign_name", ""),
+            "publisher_platform": d.get("publisher_platform", "unknown"),
+            "impressions": int(d.get("impressions", 0) or 0),
+            "clicks": int(d.get("clicks", 0) or 0),
+            "spend": float(d.get("spend", 0) or 0),
+            "conversions": conv,
+        })
+    return out
+
+
 # ─────────────────────────────────────────────
 # GA4 (옵션)
 # ─────────────────────────────────────────────

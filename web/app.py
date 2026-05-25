@@ -34,6 +34,7 @@ from lib.dashboard_data import (
     fetch_unified,
     fetch_meta_ad_sets,
     fetch_meta_ads,
+    fetch_meta_placements,
     fetch_naver,
 )
 from web.analytics import (
@@ -42,6 +43,14 @@ from web.analytics import (
     classify_keyword_action,
     generate_meta_insights,
     generate_naver_insights,
+    diagnose_meta_ad_set,
+    analyze_meta_placements,
+    generate_meta_strategy,
+    VERDICT_KILL,
+    VERDICT_FIX,
+    VERDICT_KEEP,
+    VERDICT_BOOST,
+    VERDICT_LEARNING,
 )
 
 load_dotenv(ROOT / ".env")
@@ -333,6 +342,14 @@ def meta_detail(
         logger.warning("[/meta] live fetch 실패: %s", e)
         ad_sets, ads, prev_ad_sets = [], [], []
 
+    # placement breakdown 별도 fetch (실패해도 페이지는 동작)
+    try:
+        placements = fetch_meta_placements(since, until)
+    except Exception as e:
+        logger.warning("[/meta] placement fetch 실패: %s", e)
+        placements = []
+    placement_analysis = analyze_meta_placements(placements)
+
     # 캠페인 단위로 합산 (ad_sets 기준)
     camp_map = {}
     for a in ad_sets:
@@ -363,14 +380,27 @@ def meta_detail(
         campaigns.append(c)
     campaigns.sort(key=lambda x: -x["spend"])
 
-    # ad set 정리
+    # ad set 정리 + 심층 진단
+    by_adset_placement = placement_analysis.get("by_adset", {})
     for a in ad_sets:
         a["spend_int"] = int(a["spend"])
         a["cpa_int"] = int(a["cpa"])
         decision, reason = classify_budget_decision(a["spend"], a["conversions"], a["cpa"])
         a["budget_decision"] = decision
         a["budget_reason"] = reason
+        an_pct = by_adset_placement.get(a["ad_set_id"], {}).get("an_pct", 0.0)
+        a["an_pct"] = an_pct
+        a["diagnosis"] = diagnose_meta_ad_set(a, an_pct=an_pct)
     ad_sets.sort(key=lambda x: -x["spend"])
+
+    # verdict 분포 카운트
+    verdict_counts = {
+        VERDICT_KILL: 0, VERDICT_FIX: 0, VERDICT_KEEP: 0,
+        VERDICT_BOOST: 0, VERDICT_LEARNING: 0,
+    }
+    for a in ad_sets:
+        v = a["diagnosis"]["verdict"]
+        verdict_counts[v] = verdict_counts.get(v, 0) + 1
 
     # ads (소재) — Winner/Learning/Kill 분류
     for a in ads:
@@ -395,6 +425,7 @@ def meta_detail(
     ) if sum(a["impressions"] for a in ad_sets) else 0
 
     insights = generate_meta_insights(cur_kpi, prev_kpi, ad_sets, ads)
+    strategy_notes = generate_meta_strategy(ad_sets, placement_analysis, cur_kpi, prev_kpi)
 
     return TEMPLATES.TemplateResponse(
         request,
@@ -407,6 +438,9 @@ def meta_detail(
             "ad_sets": ad_sets[:30],
             "ads": ads[:50],
             "insights": insights,
+            "strategy_notes": strategy_notes,
+            "placement_analysis": placement_analysis,
+            "verdict_counts": verdict_counts,
             "has_password": bool(_password()),
         },
     )
