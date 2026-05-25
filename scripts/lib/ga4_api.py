@@ -38,17 +38,26 @@ def _load_credentials(token_path: Path, client_path: Optional[Path] = None):
     except ImportError as e:
         raise RuntimeError(f"google-auth 미설치: pip install google-auth ({e})")
 
-    if not token_path.exists():
-        raise GA4NotConfigured(
-            f"OAuth 토큰 없음 ({token_path}). "
-            f"python scripts/ga4_oauth_setup.py 로 1회 발급 필요."
-        )
-    data = json.loads(token_path.read_text(encoding="utf-8"))
+    # 파일 우선, 없으면 GA4_USER_TOKEN_JSON 환경변수 (Vercel 등 read-only 환경용)
+    if token_path.exists():
+        data = json.loads(token_path.read_text(encoding="utf-8"))
+    else:
+        env_json = os.getenv("GA4_USER_TOKEN_JSON", "").strip()
+        if not env_json:
+            raise GA4NotConfigured(
+                f"OAuth 토큰 없음 ({token_path}) + GA4_USER_TOKEN_JSON 미설정. "
+                f"python scripts/ga4_oauth_setup.py 로 1회 발급 필요."
+            )
+        data = json.loads(env_json)
     creds = Credentials.from_authorized_user_info(data, data.get("scopes"))
-    # 만료됐으면 새 access token 갱신
+    # 만료됐으면 새 access token 갱신. 파일이 writable일 때만 저장.
     if creds.expired and creds.refresh_token:
         creds.refresh(Request())
-        token_path.write_text(creds.to_json(), encoding="utf-8")
+        try:
+            if token_path.exists() and os.access(str(token_path), os.W_OK):
+                token_path.write_text(creds.to_json(), encoding="utf-8")
+        except Exception:
+            pass  # Vercel 등 read-only 환경에서는 매 요청마다 메모리상 갱신만
         logger.info("[GA4] access token 자동 갱신 완료")
     return creds
 

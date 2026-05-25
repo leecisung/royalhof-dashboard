@@ -5,3 +5,5 @@ python-multipart==0.0.9
 requests>=2.31.0,<3.0
 python-dotenv>=1.0.0
 facebook-business>=19.0.0
+google-analytics-data>=0.18.0,<1.0
+google-auth>=2.0.0,<3.0

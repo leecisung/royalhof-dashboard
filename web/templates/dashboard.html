@@ -216,8 +216,90 @@
     </table>
   </div>
 
+  <!-- GA4 -->
+  <div class="card">
+    <h2>🌐 GA4 사이트 분석
+      <span class="meta">property 534869930 · 사이트 진실 측정</span>
+    </h2>
+    {% if not ga4_configured %}
+      <p style="color:var(--muted);font-size:13px">⚠️ GA4 미설정 또는 연결 실패. {{ ga4_error or "" }}</p>
+    {% else %}
+      <div class="kpi-grid" style="margin-bottom:14px">
+        {% set ga4_sessions = ga4_daily | sum(attribute='sessions') %}
+        {% set ga4_users = ga4_daily | sum(attribute='users') %}
+        {% set ga4_pageviews = ga4_daily | sum(attribute='pageviews') %}
+        <div class="kpi">
+          <div class="label">👥 세션</div>
+          <div class="value">{{ "{:,}".format(ga4_sessions) }}</div>
+        </div>
+        <div class="kpi">
+          <div class="label">🧍 사용자</div>
+          <div class="value">{{ "{:,}".format(ga4_users) }}</div>
+        </div>
+        <div class="kpi">
+          <div class="label">📄 페이지뷰</div>
+          <div class="value">{{ "{:,}".format(ga4_pageviews) }}</div>
+        </div>
+      </div>
+
+      <p style="font-size:13px;font-weight:600;margin:14px 0 6px">채널/매체별 트래픽 (top 15)</p>
+      <table>
+        <thead><tr>
+          <th class="left">소스</th><th class="left">매체</th>
+          <th>세션</th><th>사용자</th><th>전환</th>
+        </tr></thead>
+        <tbody>
+        {% for s in ga4_by_source %}
+          <tr>
+            <td class="left">{{ s.source }}</td>
+            <td class="left">{{ s.medium }}</td>
+            <td>{{ "{:,}".format(s.sessions) }}</td>
+            <td>{{ "{:,}".format(s.users) }}</td>
+            <td>{{ "%.0f"|format(s.conversions) }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+
+      <p style="font-size:13px;font-weight:600;margin:18px 0 6px">UTM 캠페인별 (top 15)</p>
+      <table>
+        <thead><tr>
+          <th class="left">소스</th><th class="left">매체</th><th class="left">캠페인</th>
+          <th>세션</th><th>전환</th>
+        </tr></thead>
+        <tbody>
+        {% for c in ga4_by_campaign %}
+          <tr>
+            <td class="left">{{ c.source }}</td>
+            <td class="left">{{ c.medium }}</td>
+            <td class="left">{{ c.campaign }}</td>
+            <td>{{ "{:,}".format(c.sessions) }}</td>
+            <td>{{ "%.0f"|format(c.conversions) }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+
+      <p style="font-size:13px;font-weight:600;margin:18px 0 6px">이벤트별 카운트 (top 15)</p>
+      <table>
+        <thead><tr>
+          <th class="left">이벤트</th><th>발생수</th><th>사용자</th>
+        </tr></thead>
+        <tbody>
+        {% for e in ga4_by_event %}
+          <tr>
+            <td class="left">{{ e.event_name }}</td>
+            <td>{{ "{:,}".format(e.count) }}</td>
+            <td>{{ "{:,}".format(e.users) }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    {% endif %}
+  </div>
+
   <footer>
-    데이터: Naver Search Ad API · Meta Marketing API · GA4 Data API (옵션)
+    데이터: Naver Search Ad API · Meta Marketing API · GA4 Data API
   </footer>
 </main>
 {% endblock %}

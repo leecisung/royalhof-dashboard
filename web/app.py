@@ -199,6 +199,8 @@ def dashboard(
         daily_map.setdefault(r.get("date", ""), []).append(r)
     daily = [{"date": dt, **_kpi(rs)} for dt, rs in sorted(daily_map.items())]
 
+    ga4 = data.get("ga4", {}) or {}
+
     return TEMPLATES.TemplateResponse(
         request,
         "dashboard.html",
@@ -214,6 +216,12 @@ def dashboard(
             "top_campaigns": top_campaigns,
             "suspicious": suspicious,
             "daily": daily,
+            "ga4_configured": ga4.get("configured", False),
+            "ga4_error": ga4.get("error"),
+            "ga4_daily": ga4.get("daily", []),
+            "ga4_by_source": (ga4.get("by_source") or [])[:15],
+            "ga4_by_campaign": (ga4.get("by_campaign") or [])[:15],
+            "ga4_by_event": (ga4.get("by_event") or [])[:15],
             "from_cache": data.get("from_cache", False),
             "fetched_at": data.get("fetched_at", ""),
             "has_password": bool(_password()),
