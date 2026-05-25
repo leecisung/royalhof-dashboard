@@ -1,19 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-GA4 데이터 클라이언트 — BigQuery export 방식.
+GA4 Data API 클라이언트.
 
-GA4 Data API 대신 GA4 → BigQuery 일간 export(events_YYYYMMDD)를 직접 쿼리.
-이유: GA4 admin이 Service Account 이메일 추가를 거부 ("이메일이 Google 계정과 일치하지 않습니다")
-하는 케이스가 있어 우회. BQ는 IAM 권한만 있으면 됨.
+인증: 본인 OAuth 사용자 토큰 (.ga4-user-token.json).
+이유: GA4 admin이 Service Account 이메일 추가를 거부하는 알려진 이슈 우회.
+본인(GA4 관리자)이 직접 만든 OAuth 클라이언트로 한 번만 인증하면 끝.
 
-요구 환경:
-- .env: GA4_PROPERTY_ID, GOOGLE_APPLICATION_CREDENTIALS (SA JSON 경로)
-- SA에 roles/bigquery.dataViewer + roles/bigquery.jobUser
-- GA4 admin → 제품 링크 → BigQuery 링크 설정 완료 (매일 export)
-- 첫 데이터까지 최대 24h 대기
-
-데이터셋: analytics_<property_id>  (자동 생성)
-테이블:   events_YYYYMMDD          (자동 생성, 매일)
+발급 흐름:
+    1. GCP Console → OAuth 클라이언트 ID (데스크톱 앱) 생성 → JSON 다운로드
+    2. 파일을 .ga4-oauth-client.json 으로 저장 (gitignored)
+    3. python scripts/ga4_oauth_setup.py 1회 실행
+    4. 브라우저에서 본인 GA4 관리자 계정 로그인 + 권한 승인
+    5. .ga4-user-token.json 자동 생성 → 이후 자동 사용
 
 대시보드 호환을 위해 기존 메서드 시그니처/반환값 유지.
 """
@@ -21,6 +19,7 @@ GA4 Data API 대신 GA4 → BigQuery 일간 export(events_YYYYMMDD)를 직접 �
 import os
 import json
 import logging
+from pathlib import Path
 from datetime import date
 from typing import Optional
 
@@ -28,298 +27,177 @@ logger = logging.getLogger(__name__)
 
 
 class GA4NotConfigured(RuntimeError):
-    """GA4 환경변수 미설정. 대시보드는 이 예외 잡아서 GA4 섹션만 disable."""
+    """GA4 환경변수/토큰 미설정. 대시보드는 이 예외 잡아서 GA4 섹션만 disable."""
+
+
+def _load_credentials(token_path: Path, client_path: Optional[Path] = None):
+    """OAuth 사용자 토큰 → Credentials 객체. 만료 시 refresh 자동."""
+    try:
+        from google.oauth2.credentials import Credentials
+        from google.auth.transport.requests import Request
+    except ImportError as e:
+        raise RuntimeError(f"google-auth 미설치: pip install google-auth ({e})")
+
+    if not token_path.exists():
+        raise GA4NotConfigured(
+            f"OAuth 토큰 없음 ({token_path}). "
+            f"python scripts/ga4_oauth_setup.py 로 1회 발급 필요."
+        )
+    data = json.loads(token_path.read_text(encoding="utf-8"))
+    creds = Credentials.from_authorized_user_info(data, data.get("scopes"))
+    # 만료됐으면 새 access token 갱신
+    if creds.expired and creds.refresh_token:
+        creds.refresh(Request())
+        token_path.write_text(creds.to_json(), encoding="utf-8")
+        logger.info("[GA4] access token 자동 갱신 완료")
+    return creds
 
 
 class GA4API:
-    def __init__(
-        self,
-        property_id: str,
-        credentials_path: Optional[str] = None,
-        project_id: Optional[str] = None,
-        dataset: Optional[str] = None,
-        location: Optional[str] = None,
-    ):
+    def __init__(self, property_id: str, token_path: Path):
         self.property_id = str(property_id)
-        if credentials_path:
-            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = credentials_path
-
         try:
-            from google.cloud import bigquery
+            from google.analytics.data_v1beta import BetaAnalyticsDataClient
         except ImportError as e:
             raise RuntimeError(
-                f"google-cloud-bigquery 설치 필요: pip install google-cloud-bigquery ({e})"
+                f"google-analytics-data 미설치: pip install google-analytics-data ({e})"
             )
-
-        # project_id가 명시 안 됐으면 SA JSON에서 추출
-        if not project_id and credentials_path and os.path.exists(credentials_path):
-            with open(credentials_path, encoding="utf-8") as f:
-                project_id = json.load(f).get("project_id")
-
-        self.project_id = project_id
-        self.dataset = dataset or f"analytics_{self.property_id}"
-        self.location = location or "asia-southeast3"
-        self.client = bigquery.Client(project=project_id) if project_id else bigquery.Client()
-        self.table_ref = f"`{self.client.project}.{self.dataset}.events_*`"
-        logger.info(
-            "[GA4-BQ] 초기화 project=%s dataset=%s location=%s property=%s",
-            self.client.project, self.dataset, self.location, self.property_id,
-        )
+        creds = _load_credentials(token_path)
+        self.client = BetaAnalyticsDataClient(credentials=creds)
+        logger.info("[GA4] 초기화 property=%s (OAuth user token)", self.property_id)
 
     @classmethod
     def from_env(cls) -> "GA4API":
         pid = os.getenv("GA4_PROPERTY_ID", "").strip()
-        cred = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
-        project = os.getenv("GA4_BQ_PROJECT", "").strip() or None
-        dataset = os.getenv("GA4_BQ_DATASET", "").strip() or None
-        location = os.getenv("GA4_BQ_LOCATION", "").strip() or None
         if not pid:
             raise GA4NotConfigured("GA4_PROPERTY_ID 미설정")
-        if not cred:
-            raise GA4NotConfigured("GOOGLE_APPLICATION_CREDENTIALS 미설정 (SA JSON 경로). Streamlit Cloud에서는 BQ 자격증명을 별도로 주입해야 함")
-        if not os.path.exists(cred):
-            raise GA4NotConfigured(f"GOOGLE_APPLICATION_CREDENTIALS 경로 없음: {cred}")
-        return cls(pid, cred, project, dataset, location)
+        token_path_str = os.getenv("GA4_OAUTH_TOKEN_PATH", "").strip()
+        if token_path_str:
+            token_path = Path(token_path_str)
+        else:
+            # 기본 경로: 프로젝트 루트
+            token_path = Path(__file__).parents[2] / ".ga4-user-token.json"
+        return cls(pid, token_path)
 
     # ─────────────────────────────────────────────
-    # 핵심 fetch 메서드 (반환 shape는 GA4 Data API 버전과 동일)
+    # 핵심 fetch 메서드
     # ─────────────────────────────────────────────
 
     def fetch_daily_summary(self, since: date, until: date) -> list[dict]:
         """일별 세션·사용자·페이지뷰·이탈률·평균체류."""
-        sql = f"""
-        WITH events AS (
-          SELECT
-            event_date,
-            user_pseudo_id,
-            event_name,
-            event_timestamp,
-            (SELECT value.int_value FROM UNNEST(event_params)
-              WHERE key='ga_session_id') AS session_id,
-            (SELECT value.int_value FROM UNNEST(event_params)
-              WHERE key='session_engaged') AS engaged
-          FROM {self.table_ref}
-          WHERE _TABLE_SUFFIX BETWEEN @start AND @end
-        ),
-        sessions AS (
-          SELECT
-            event_date,
-            user_pseudo_id,
-            session_id,
-            MAX(engaged) AS engaged,
-            MIN(event_timestamp) AS start_ts,
-            MAX(event_timestamp) AS end_ts,
-            COUNTIF(event_name='page_view') AS pv
-          FROM events
-          WHERE session_id IS NOT NULL
-          GROUP BY event_date, user_pseudo_id, session_id
+        rows = self._run(
+            dimensions=["date"],
+            metrics=["sessions", "totalUsers", "screenPageViews", "bounceRate", "averageSessionDuration"],
+            since=since, until=until,
         )
-        SELECT
-          event_date AS dt,
-          COUNT(*) AS sessions,
-          COUNT(DISTINCT user_pseudo_id) AS users,
-          SUM(pv) AS pageviews,
-          SAFE_DIVIDE(COUNTIF(engaged IS NULL OR engaged = 0), COUNT(*)) AS bounce_rate,
-          AVG(SAFE_DIVIDE(end_ts - start_ts, 1000000)) AS avg_session_duration
-        FROM sessions
-        GROUP BY event_date
-        ORDER BY event_date
-        """
-        rows = self._run(sql, since, until)
         out = []
         for r in rows:
-            dv = r["dt"]
+            dv = r["dim"][0]
             out.append({
                 "date": f"{dv[0:4]}-{dv[4:6]}-{dv[6:8]}",
-                "sessions": int(r["sessions"] or 0),
-                "users": int(r["users"] or 0),
-                "pageviews": int(r["pageviews"] or 0),
-                "bounce_rate": float(r["bounce_rate"] or 0),
-                "avg_session_duration": float(r["avg_session_duration"] or 0),
+                "sessions": int(r["metric"][0] or 0),
+                "users": int(r["metric"][1] or 0),
+                "pageviews": int(r["metric"][2] or 0),
+                "bounce_rate": float(r["metric"][3] or 0),
+                "avg_session_duration": float(r["metric"][4] or 0),
             })
-        return out
+        return sorted(out, key=lambda x: x["date"])
 
     def fetch_by_source(self, since: date, until: date) -> list[dict]:
         """채널/매체별 트래픽."""
-        sql = f"""
-        WITH session_keys AS (
-          SELECT
-            user_pseudo_id,
-            (SELECT value.int_value FROM UNNEST(event_params)
-              WHERE key='ga_session_id') AS session_id,
-            event_name,
-            collected_traffic_source.manual_source AS src,
-            collected_traffic_source.manual_medium AS med
-          FROM {self.table_ref}
-          WHERE _TABLE_SUFFIX BETWEEN @start AND @end
-        ),
-        sessions AS (
-          SELECT
-            user_pseudo_id, session_id,
-            ANY_VALUE(IF(event_name='session_start', src, NULL) IGNORE NULLS) AS src,
-            ANY_VALUE(IF(event_name='session_start', med, NULL) IGNORE NULLS) AS med,
-            COUNTIF(event_name IN ('purchase','generate_lead','sign_up','login')) AS conv
-          FROM session_keys
-          WHERE session_id IS NOT NULL
-          GROUP BY user_pseudo_id, session_id
+        rows = self._run(
+            dimensions=["sessionSource", "sessionMedium"],
+            metrics=["sessions", "totalUsers", "conversions"],
+            since=since, until=until,
         )
-        SELECT
-          COALESCE(src, '(direct)') AS source,
-          COALESCE(med, '(none)') AS medium,
-          COUNT(*) AS sessions,
-          COUNT(DISTINCT user_pseudo_id) AS users,
-          SUM(conv) AS conversions
-        FROM sessions
-        GROUP BY source, medium
-        ORDER BY sessions DESC
-        """
-        rows = self._run(sql, since, until)
-        return [{
-            "source": r["source"],
-            "medium": r["medium"],
-            "sessions": int(r["sessions"] or 0),
-            "users": int(r["users"] or 0),
-            "conversions": float(r["conversions"] or 0),
-        } for r in rows]
+        out = []
+        for r in rows:
+            out.append({
+                "source": r["dim"][0],
+                "medium": r["dim"][1],
+                "sessions": int(r["metric"][0] or 0),
+                "users": int(r["metric"][1] or 0),
+                "conversions": float(r["metric"][2] or 0),
+            })
+        return sorted(out, key=lambda x: -x["sessions"])
 
     def fetch_by_campaign(self, since: date, until: date) -> list[dict]:
         """UTM campaign 단위."""
-        sql = f"""
-        WITH session_keys AS (
-          SELECT
-            user_pseudo_id,
-            (SELECT value.int_value FROM UNNEST(event_params)
-              WHERE key='ga_session_id') AS session_id,
-            event_name,
-            collected_traffic_source.manual_source AS src,
-            collected_traffic_source.manual_medium AS med,
-            collected_traffic_source.manual_campaign_name AS camp
-          FROM {self.table_ref}
-          WHERE _TABLE_SUFFIX BETWEEN @start AND @end
-        ),
-        sessions AS (
-          SELECT
-            user_pseudo_id, session_id,
-            ANY_VALUE(IF(event_name='session_start', src, NULL) IGNORE NULLS) AS src,
-            ANY_VALUE(IF(event_name='session_start', med, NULL) IGNORE NULLS) AS med,
-            ANY_VALUE(IF(event_name='session_start', camp, NULL) IGNORE NULLS) AS camp,
-            COUNTIF(event_name IN ('purchase','generate_lead','sign_up','login')) AS conv
-          FROM session_keys
-          WHERE session_id IS NOT NULL
-          GROUP BY user_pseudo_id, session_id
+        rows = self._run(
+            dimensions=["sessionSource", "sessionMedium", "sessionCampaignName"],
+            metrics=["sessions", "totalUsers", "conversions"],
+            since=since, until=until,
         )
-        SELECT
-          COALESCE(src, '(direct)') AS source,
-          COALESCE(med, '(none)') AS medium,
-          COALESCE(camp, '(not set)') AS campaign,
-          COUNT(*) AS sessions,
-          COUNT(DISTINCT user_pseudo_id) AS users,
-          SUM(conv) AS conversions
-        FROM sessions
-        GROUP BY source, medium, campaign
-        ORDER BY sessions DESC
-        """
-        rows = self._run(sql, since, until)
-        return [{
-            "source": r["source"],
-            "medium": r["medium"],
-            "campaign": r["campaign"],
-            "sessions": int(r["sessions"] or 0),
-            "users": int(r["users"] or 0),
-            "conversions": float(r["conversions"] or 0),
-        } for r in rows]
+        out = []
+        for r in rows:
+            out.append({
+                "source": r["dim"][0],
+                "medium": r["dim"][1],
+                "campaign": r["dim"][2],
+                "sessions": int(r["metric"][0] or 0),
+                "users": int(r["metric"][1] or 0),
+                "conversions": float(r["metric"][2] or 0),
+            })
+        return sorted(out, key=lambda x: -x["sessions"])
 
     def fetch_conversions_by_event(self, since: date, until: date) -> list[dict]:
         """이벤트별 카운트."""
-        sql = f"""
-        SELECT
-          event_name AS event_name,
-          COUNT(*) AS cnt,
-          COUNT(DISTINCT user_pseudo_id) AS users
-        FROM {self.table_ref}
-        WHERE _TABLE_SUFFIX BETWEEN @start AND @end
-        GROUP BY event_name
-        ORDER BY cnt DESC
-        """
-        rows = self._run(sql, since, until)
-        return [{
-            "event_name": r["event_name"],
-            "count": int(r["cnt"] or 0),
-            "users": int(r["users"] or 0),
-        } for r in rows]
+        rows = self._run(
+            dimensions=["eventName"],
+            metrics=["eventCount", "totalUsers"],
+            since=since, until=until,
+        )
+        out = []
+        for r in rows:
+            out.append({
+                "event_name": r["dim"][0],
+                "count": int(r["metric"][0] or 0),
+                "users": int(r["metric"][1] or 0),
+            })
+        return sorted(out, key=lambda x: -x["count"])
 
     def fetch_landing_pages(self, since: date, until: date, limit: int = 20) -> list[dict]:
         """랜딩 페이지 top N."""
-        sql = f"""
-        WITH session_keys AS (
-          SELECT
-            user_pseudo_id,
-            (SELECT value.int_value FROM UNNEST(event_params)
-              WHERE key='ga_session_id') AS session_id,
-            event_name,
-            event_timestamp,
-            (SELECT value.string_value FROM UNNEST(event_params)
-              WHERE key='page_location') AS page,
-            (SELECT value.int_value FROM UNNEST(event_params)
-              WHERE key='session_engaged') AS engaged
-          FROM {self.table_ref}
-          WHERE _TABLE_SUFFIX BETWEEN @start AND @end
-        ),
-        sessions AS (
-          SELECT
-            user_pseudo_id, session_id,
-            ARRAY_AGG(page ORDER BY event_timestamp ASC LIMIT 1)[OFFSET(0)] AS landing,
-            MAX(engaged) AS engaged,
-            MIN(event_timestamp) AS start_ts,
-            MAX(event_timestamp) AS end_ts
-          FROM session_keys
-          WHERE session_id IS NOT NULL
-          GROUP BY user_pseudo_id, session_id
+        rows = self._run(
+            dimensions=["landingPagePlusQueryString"],
+            metrics=["sessions", "bounceRate", "averageSessionDuration"],
+            since=since, until=until,
+            limit=limit,
         )
-        SELECT
-          landing AS page,
-          COUNT(*) AS sessions,
-          SAFE_DIVIDE(COUNTIF(engaged IS NULL OR engaged = 0), COUNT(*)) AS bounce_rate,
-          AVG(SAFE_DIVIDE(end_ts - start_ts, 1000000)) AS avg_duration
-        FROM sessions
-        WHERE landing IS NOT NULL
-        GROUP BY landing
-        ORDER BY sessions DESC
-        LIMIT @limit
-        """
-        rows = self._run(sql, since, until, limit=limit)
-        return [{
-            "page": r["page"],
-            "sessions": int(r["sessions"] or 0),
-            "bounce_rate": float(r["bounce_rate"] or 0),
-            "avg_duration": float(r["avg_duration"] or 0),
-        } for r in rows]
+        out = []
+        for r in rows:
+            out.append({
+                "page": r["dim"][0],
+                "sessions": int(r["metric"][0] or 0),
+                "bounce_rate": float(r["metric"][1] or 0),
+                "avg_duration": float(r["metric"][2] or 0),
+            })
+        return sorted(out, key=lambda x: -x["sessions"])
 
     # ─────────────────────────────────────────────
     # 내부
     # ─────────────────────────────────────────────
 
-    def _run(self, sql: str, since: date, until: date, limit: Optional[int] = None) -> list[dict]:
-        from google.cloud import bigquery
-        params = [
-            bigquery.ScalarQueryParameter("start", "STRING", since.strftime("%Y%m%d")),
-            bigquery.ScalarQueryParameter("end",   "STRING", until.strftime("%Y%m%d")),
-        ]
-        if limit is not None:
-            params.append(bigquery.ScalarQueryParameter("limit", "INT64", int(limit)))
-        job_config = bigquery.QueryJobConfig(query_parameters=params)
-        try:
-            result = self.client.query(sql, job_config=job_config, location=self.location).result()
-            rows = [dict(r) for r in result]
-            logger.info("[GA4-BQ] %d rows (%s ~ %s)", len(rows), since, until)
-            return rows
-        except Exception as e:
-            msg = str(e)
-            # 첫 24h: events_* 테이블 미존재. 대시보드 깨지지 않게 빈 결과 반환.
-            if "Not found" in msg or "Table" in msg and "not found" in msg.lower():
-                logger.warning("[GA4-BQ] 데이터셋/테이블 없음 (export 대기중?): %s", msg.split('\n')[0])
-                return []
-            raise
+    def _run(self, dimensions, metrics, since: date, until: date, limit: int = 1000) -> list[dict]:
+        from google.analytics.data_v1beta.types import (
+            DateRange, Dimension, Metric, RunReportRequest,
+        )
+        req = RunReportRequest(
+            property=f"properties/{self.property_id}",
+            dimensions=[Dimension(name=d) for d in dimensions],
+            metrics=[Metric(name=m) for m in metrics],
+            date_ranges=[DateRange(start_date=str(since), end_date=str(until))],
+            limit=limit,
+        )
+        resp = self.client.run_report(req)
+        out = []
+        for row in resp.rows:
+            out.append({
+                "dim": [d.value for d in row.dimension_values],
+                "metric": [m.value for m in row.metric_values],
+            })
+        logger.info("[GA4] run_report %s × %s : %d rows", dimensions, metrics, len(out))
+        return out
 
 
 if __name__ == "__main__":
@@ -338,11 +216,9 @@ if __name__ == "__main__":
         since = today - timedelta(days=7)
         rows = api.fetch_daily_summary(since, today)
         if not rows:
-            print(f"⚠️ 데이터 없음. GA4→BQ export는 첫 데이터까지 최대 24h 걸립니다.")
-            print(f"   project={api.client.project} dataset={api.dataset}")
-            print(f"   내일 다시 실행해보세요.")
+            print(f"⚠️ 데이터 없음. 기간 안에 트래픽이 없거나 새로 만든 property일 수 있음.")
         else:
-            print(f"✅ GA4(BQ) 연결 성공 (property {api.property_id})")
+            print(f"✅ GA4 연결 성공 (property {api.property_id})")
             print(f"   기간 {since} ~ {today}, {len(rows)}일")
             total = sum(r["sessions"] for r in rows)
             print(f"   총 세션: {total:,}")

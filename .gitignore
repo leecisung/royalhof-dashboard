@@ -1,5 +1,7 @@
 .env
 .ga4-credentials.json
+.ga4-oauth-client.json
+.ga4-user-token.json
 .streamlit/secrets.toml
 *.db
 __pycache__/
