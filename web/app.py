@@ -382,9 +382,15 @@ def naver_detail(
     prev_prev_until = prev_since - timedelta(days=1)
     prev_prev_since = prev_prev_until - timedelta(days=days - 1)
 
-    cur = fetch_naver(since, until)
-    prev = fetch_naver(prev_since, prev_until)
-    prev_prev = fetch_naver(prev_prev_since, prev_prev_until)
+    # 병렬 fetch (단일 인스턴스 메모리 위에서 ThreadPoolExecutor)
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=3) as ex:
+        f_cur = ex.submit(fetch_naver, since, until)
+        f_prev = ex.submit(fetch_naver, prev_since, prev_until)
+        f_prev_prev = ex.submit(fetch_naver, prev_prev_since, prev_prev_until)
+        cur = f_cur.result()
+        prev = f_prev.result()
+        prev_prev = f_prev_prev.result()
 
     # 캠페인 단위 집계 (현재)
     camp_map = {}
