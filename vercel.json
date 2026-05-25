@@ -1,8 +1,8 @@
 {
   "functions": {
-    "api/*.py": {
+    "api/index.py": {
       "maxDuration": 60,
-      "includeFiles": "data/snapshots/**"
+      "includeFiles": "{web/templates,data/snapshots}/**"
     }
   },
   "rewrites": [
