@@ -203,12 +203,16 @@ def generate_naver_insights(
     over_30k = [k for k in expensive_keywords if k["cpc"] >= 30000]
     over_10k = [k for k in expensive_keywords if 10000 <= k["cpc"] < 30000]
 
+    # 지출 키는 항목 출처에 따라 spend(캠페인) 또는 cost(키워드 단위) 둘 다 가능
+    def _spend(k: dict) -> int:
+        return int(k.get("spend", k.get("cost", 0)) or 0)
+
     if over_30k:
-        spend_sum = sum(k["spend"] for k in over_30k)
-        fixes.append(f"🛑 CPC 30k+ 키워드 {len(over_30k)}개 (지출 {int(spend_sum):,}원) — 즉시 OFF 권장")
+        spend_sum = sum(_spend(k) for k in over_30k)
+        fixes.append(f"🛑 CPC 30k+ 키워드 {len(over_30k)}개 (지출 {spend_sum:,}원) — 즉시 OFF 권장")
     if over_10k:
-        spend_sum = sum(k["spend"] for k in over_10k)
-        fixes.append(f"⚠️ CPC 10~30k 키워드 {len(over_10k)}개 (지출 {int(spend_sum):,}원) — 입찰가 단계적 인하")
+        spend_sum = sum(_spend(k) for k in over_10k)
+        fixes.append(f"⚠️ CPC 10~30k 키워드 {len(over_10k)}개 (지출 {spend_sum:,}원) — 입찰가 단계적 인하")
 
     if not over_30k and not over_10k:
         wins.append("CPC 10k 이상 키워드 없음 — 효율 양호")
