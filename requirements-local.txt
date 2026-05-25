@@ -1,0 +1,16 @@
+# 로컬 개발/분석 전용 (Vercel 배포에는 사용 안 함).
+# pip install -r requirements-local.txt
+
+-r requirements.txt
+uvicorn==0.30.6
+
+# Streamlit 대시보드 (로컬에서 'streamlit run scripts/dashboard.py')
+streamlit>=1.30.0,<2.0
+plotly>=5.18.0,<7.0
+pandas>=2.0.0,<3.0
+numpy>=1.24.0,<2.0
+
+# 분석 스크립트 (daily/weekly/monthly_analysis.py)
+google-analytics-data>=0.18.0
+google-auth-oauthlib>=1.2.0
+anthropic>=0.40.0

@@ -1,11 +1,7 @@
+# Vercel 배포 (FastAPI 서버리스) — 최소 필수만
+fastapi==0.115.0
+jinja2==3.1.4
+python-multipart==0.0.9
 requests>=2.31.0,<3.0
 python-dotenv>=1.0.0
 facebook-business>=19.0.0
-streamlit>=1.30.0,<2.0
-plotly>=5.18.0,<7.0
-pandas>=2.0.0,<3.0
-numpy>=1.24.0,<2.0
-
-# ─ 아래는 로컬에서 분석 스크립트 돌릴 때만 필요 (Streamlit Cloud 배포 시엔 불필요)
-# pip install google-analytics-data google-cloud-bigquery anthropic
-

@@ -11,3 +11,5 @@ logs/
 reports/
 dashboard-*.png
 .playwright-mcp/
+
+.vercel

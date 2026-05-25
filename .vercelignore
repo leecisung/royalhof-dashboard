@@ -1,0 +1,58 @@
+.venv/
+venv/
+__pycache__/
+*.pyc
+.env
+.env.local
+.env.*
+.idea/
+.vscode/
+.DS_Store
+
+# 비밀 자격증명 (절대 배포 금지)
+.ga4-credentials.json
+.ga4-oauth-client.json
+.ga4-user-token.json
+.streamlit/
+
+# 로컬 분석 결과물 (배포 불필요)
+reports/
+logs/
+data/reserve_pool.db
+data/dashboard_cache.db
+data/meta_state.db
+*.db
+
+# 일회성 등록·진단 스크립트 (배포 시 필요 없음, 함수 사이즈 절감)
+scripts/00_*.py
+scripts/00b_*.py
+scripts/01_*.py
+scripts/02_*.py
+scripts/03_*.py
+scripts/04_*.py
+scripts/05_*.py
+scripts/06_*.py
+scripts/07_*.py
+scripts/08_*.py
+scripts/09_*.py
+scripts/10_*.py
+scripts/debug_*.py
+scripts/diagnose_*.py
+scripts/report_weekly*.py
+scripts/verify_*.py
+scripts/ga4_oauth_setup.py
+scripts/md_to_html.py
+scripts/weekly_pruner.py
+scripts/meta_*.py
+scripts/daily_analysis.py
+scripts/weekly_analysis.py
+scripts/monthly_analysis.py
+scripts/adhoc_query.py
+
+# 로컬 streamlit dashboard (Vercel 배포 안 함)
+scripts/dashboard.py
+
+# 잔재
+*.png
+*.log
+*.html

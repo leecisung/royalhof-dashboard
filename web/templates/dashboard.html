@@ -1,0 +1,223 @@
+{% extends "base.html" %}
+{% block title %}광고 통합 대시보드{% endblock %}
+{% block body %}
+<header>
+  <h1>📊 광고 통합 대시보드</h1>
+  <nav>
+    <a href="/?preset=today">오늘</a>
+    <a href="/?preset=7d">7일</a>
+    <a href="/?preset=14d">14일</a>
+    <a href="/?preset=30d">30일</a>
+    <a href="/?preset=mtd">이번달</a>
+    <a href="/?preset=lastmo">지난달</a>
+  </nav>
+  {% if has_password %}
+    <a href="/logout" class="logout">로그아웃</a>
+  {% endif %}
+</header>
+
+<main>
+
+  <!-- 컨트롤 -->
+  <div class="card">
+    <form method="get" action="/" class="controls">
+      <label>기간
+        <select name="preset">
+          <option value="today" {% if preset=='today' %}selected{% endif %}>오늘</option>
+          <option value="7d"    {% if preset=='7d' %}selected{% endif %}>최근 7일</option>
+          <option value="14d"   {% if preset=='14d' %}selected{% endif %}>최근 14일</option>
+          <option value="30d"   {% if preset=='30d' %}selected{% endif %}>최근 30일</option>
+          <option value="mtd"   {% if preset=='mtd' %}selected{% endif %}>이번 달</option>
+          <option value="lastmo" {% if preset=='lastmo' %}selected{% endif %}>지난 달</option>
+          <option value="custom" {% if preset=='custom' %}selected{% endif %}>직접 지정</option>
+        </select>
+      </label>
+      <label>시작
+        <input type="date" name="start" value="{{ since }}">
+      </label>
+      <label>종료
+        <input type="date" name="end" value="{{ until }}">
+      </label>
+      <button type="submit">적용</button>
+      <a href="/?preset={{ preset }}&refresh=1" style="text-decoration:none">
+        <button type="button" class="outline">🔄 강제 갱신</button>
+      </a>
+      <span style="margin-left:auto;font-size:12px;color:var(--muted)">
+        📅 {{ since }} ~ {{ until }} ({{ days }}일) ·
+        {% if from_cache %}
+          <span class="pill cache">캐시</span>
+        {% else %}
+          <span class="pill fresh">새로 fetch</span>
+        {% endif %}
+        {{ fetched_at }}
+      </span>
+    </form>
+  </div>
+
+  <!-- 종합 KPI -->
+  <div class="card">
+    <h2>종합 KPI <span class="meta">{{ since }} ~ {{ until }}</span></h2>
+    <div class="kpi-grid">
+      <div class="kpi">
+        <div class="label">💰 총 지출</div>
+        <div class="value">{{ "{:,}".format(kpi_total.spend) }}원</div>
+      </div>
+      <div class="kpi">
+        <div class="label">👁 노출</div>
+        <div class="value">{{ "{:,}".format(kpi_total.impressions) }}</div>
+      </div>
+      <div class="kpi">
+        <div class="label">🖱 클릭</div>
+        <div class="value">{{ "{:,}".format(kpi_total.clicks) }}</div>
+        <div class="sub">CTR {{ "%.2f"|format(kpi_total.ctr) }}%</div>
+      </div>
+      <div class="kpi">
+        <div class="label">📩 전환</div>
+        <div class="value">{{ "{:,}".format(kpi_total.conversions) }}</div>
+        <div class="sub">CPA {% if kpi_total.conversions %}{{ "{:,}".format(kpi_total.cpa) }}원{% else %}-{% endif %}</div>
+      </div>
+      <div class="kpi">
+        <div class="label">💵 평균 CPC</div>
+        <div class="value">{{ "{:,}".format(kpi_total.cpc) }}원</div>
+      </div>
+      <div class="kpi">
+        <div class="label">📺 CPM</div>
+        <div class="value">{{ "{:,}".format(kpi_total.cpm) }}원</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 채널별 -->
+  <div class="card">
+    <h2>채널별 합계</h2>
+    <table>
+      <thead><tr>
+        <th class="left">채널</th><th>지출</th><th>노출</th><th>클릭</th>
+        <th>CTR</th><th>CPC</th><th>전환</th><th>CPA</th>
+      </tr></thead>
+      <tbody>
+        <tr>
+          <td class="left"><span class="pill naver">Naver</span></td>
+          <td>{{ "{:,}".format(kpi_naver.spend) }}원</td>
+          <td>{{ "{:,}".format(kpi_naver.impressions) }}</td>
+          <td>{{ "{:,}".format(kpi_naver.clicks) }}</td>
+          <td>{{ "%.2f"|format(kpi_naver.ctr) }}%</td>
+          <td>{{ "{:,}".format(kpi_naver.cpc) }}원</td>
+          <td>{{ "{:,}".format(kpi_naver.conversions) }}</td>
+          <td>{% if kpi_naver.conversions %}{{ "{:,}".format(kpi_naver.cpa) }}원{% else %}-{% endif %}</td>
+        </tr>
+        <tr>
+          <td class="left"><span class="pill meta">Meta</span></td>
+          <td>{{ "{:,}".format(kpi_meta.spend) }}원</td>
+          <td>{{ "{:,}".format(kpi_meta.impressions) }}</td>
+          <td>{{ "{:,}".format(kpi_meta.clicks) }}</td>
+          <td>{{ "%.2f"|format(kpi_meta.ctr) }}%</td>
+          <td>{{ "{:,}".format(kpi_meta.cpc) }}원</td>
+          <td>{{ "{:,}".format(kpi_meta.conversions) }}</td>
+          <td>{% if kpi_meta.conversions %}{{ "{:,}".format(kpi_meta.cpa) }}원{% else %}-{% endif %}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 브랜드별 -->
+  <div class="card">
+    <h2>브랜드별</h2>
+    <table>
+      <thead><tr>
+        <th class="left">브랜드</th><th>지출</th><th>노출</th><th>클릭</th>
+        <th>CTR</th><th>CPC</th><th>전환</th>
+      </tr></thead>
+      <tbody>
+      {% for b in brands %}
+        <tr>
+          <td class="left">{{ b.name }}</td>
+          <td>{{ "{:,}".format(b.spend) }}원</td>
+          <td>{{ "{:,}".format(b.impressions) }}</td>
+          <td>{{ "{:,}".format(b.clicks) }}</td>
+          <td>{{ "%.2f"|format(b.ctr) }}%</td>
+          <td>{{ "{:,}".format(b.cpc) }}원</td>
+          <td>{{ "{:,}".format(b.conversions) }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 캠페인 Top 10 -->
+  <div class="card">
+    <h2>캠페인 Top 10 (지출 기준)</h2>
+    <table>
+      <thead><tr>
+        <th class="left">채널</th><th class="left">계정</th><th class="left">캠페인</th>
+        <th>지출</th><th>노출</th><th>클릭</th><th>CTR</th><th>CPC</th>
+      </tr></thead>
+      <tbody>
+      {% for c in top_campaigns %}
+        <tr>
+          <td class="left"><span class="pill {{ c.channel|lower }}">{{ c.channel }}</span></td>
+          <td class="left">{{ c.account }}</td>
+          <td class="left">{{ c.campaign }}</td>
+          <td>{{ "{:,}".format(c.spend) }}원</td>
+          <td>{{ "{:,}".format(c.impressions) }}</td>
+          <td>{{ "{:,}".format(c.clicks) }}</td>
+          <td>{{ "%.2f"|format(c.ctr) }}%</td>
+          <td>{{ "{:,}".format(c.cpc) }}원</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 효율 의심 -->
+  <div class="card">
+    <h2>⚠️ 효율 의심 캠페인 (지출↑ + CTR↓)</h2>
+    <table>
+      <thead><tr>
+        <th class="left">채널</th><th class="left">계정</th><th class="left">캠페인</th>
+        <th>지출</th><th>CTR</th><th>CPC</th>
+      </tr></thead>
+      <tbody>
+      {% for c in suspicious %}
+        <tr>
+          <td class="left"><span class="pill {{ c.channel|lower }}">{{ c.channel }}</span></td>
+          <td class="left">{{ c.account }}</td>
+          <td class="left">{{ c.campaign }}</td>
+          <td>{{ "{:,}".format(c.spend) }}원</td>
+          <td>{{ "%.2f"|format(c.ctr) }}%</td>
+          <td>{{ "{:,}".format(c.cpc) }}원</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 일별 -->
+  <div class="card">
+    <h2>일별 합계</h2>
+    <table>
+      <thead><tr>
+        <th class="left">날짜</th><th>지출</th><th>노출</th><th>클릭</th>
+        <th>CTR</th><th>CPC</th><th>전환</th>
+      </tr></thead>
+      <tbody>
+      {% for d in daily %}
+        <tr>
+          <td class="left">{{ d.date }}</td>
+          <td>{{ "{:,}".format(d.spend) }}원</td>
+          <td>{{ "{:,}".format(d.impressions) }}</td>
+          <td>{{ "{:,}".format(d.clicks) }}</td>
+          <td>{{ "%.2f"|format(d.ctr) }}%</td>
+          <td>{{ "{:,}".format(d.cpc) }}원</td>
+          <td>{{ "{:,}".format(d.conversions) }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <footer>
+    데이터: Naver Search Ad API · Meta Marketing API · GA4 Data API (옵션)
+  </footer>
+</main>
+{% endblock %}
