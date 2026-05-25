@@ -46,11 +46,11 @@ from web.analytics import (
 
 load_dotenv(ROOT / ".env")
 
-# 스냅샷 파일 (로컬 prefetch_snapshot.py가 생성 후 api/snapshot.json 으로도 복사)
+# 스냅샷 파일 (로컬 prefetch_snapshot.py가 생성, web/snapshots/latest.json으로도 복사)
 import json as _json
 _SNAPSHOT_CANDIDATES = [
-    ROOT / "api" / "snapshot.json",            # Vercel 함수 번들 표준 위치
-    ROOT / "data" / "snapshots" / "latest.json",  # 로컬 dev
+    Path(__file__).parent / "snapshots" / "latest.json",  # Vercel 번들 (web/ 안)
+    ROOT / "data" / "snapshots" / "latest.json",          # 로컬 dev
 ]
 
 
