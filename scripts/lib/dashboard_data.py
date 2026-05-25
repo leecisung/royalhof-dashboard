@@ -27,7 +27,11 @@ from lib.naver_api import NaverAdAPI
 
 logger = logging.getLogger(__name__)
 
-CACHE_DB = ROOT / "data" / "dashboard_cache.db"
+# Vercel 등 read-only 환경에서는 /tmp 사용. 로컬은 data/ 폴더.
+if os.path.exists("/tmp") and not os.access(str(ROOT / "data"), os.W_OK):
+    CACHE_DB = Path("/tmp/dashboard_cache.db")
+else:
+    CACHE_DB = ROOT / "data" / "dashboard_cache.db"
 CACHE_TTL_SECONDS = 3600  # 1시간
 
 
