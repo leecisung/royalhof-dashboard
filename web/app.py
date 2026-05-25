@@ -14,7 +14,10 @@ scripts/lib/* 그대로 재사용.
 
 import os
 import sys
+import logging
 import secrets as pysecrets
+
+logger = logging.getLogger(__name__)
 from pathlib import Path
 from datetime import date, timedelta
 from typing import Optional
@@ -382,11 +385,12 @@ def naver_detail(
     prev_prev_until = prev_since - timedelta(days=1)
     prev_prev_since = prev_prev_until - timedelta(days=days - 1)
 
-    # fetch_unified의 캐시 활용 (/ 페이지가 1시간 내에 방문돼 있으면 즉시 hit)
-    cur_data = fetch_unified(since, until, force_refresh=False)
-    cur = cur_data.get("naver", [])
+    import time
+    t0 = time.time()
+    # 현재 기간만 직접 fetch. prev/prev_prev는 캐시 hit 시에만 표시 (Vercel 함수 시간 제약)
+    cur = fetch_naver(since, until)
+    logger.info("[/naver] fetch_naver took %.1fs", time.time() - t0)
 
-    # prev/prev_prev는 캐시 hit 시에만 사용. 캐시 미스면 빈 리스트.
     def _cached_or_empty(s, u):
         try:
             from lib.dashboard_data import _cache_get, _key
