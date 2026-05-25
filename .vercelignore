@@ -55,4 +55,4 @@ scripts/dashboard.py
 # 잔재
 *.png
 *.log
-*.html
+# *.html — Jinja2 템플릿이 HTML이라 제외 안 함

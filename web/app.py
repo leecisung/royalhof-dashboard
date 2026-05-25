@@ -31,8 +31,12 @@ from lib.dashboard_data import fetch_unified
 
 load_dotenv(ROOT / ".env")
 
-BASE_DIR = Path(__file__).parent
-TEMPLATES = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+# 템플릿 위치: web/templates/ (로컬) 또는 api/templates/ (Vercel 번들).
+_T_LOCAL = Path(__file__).parent / "templates"
+_T_VERCEL = ROOT / "api" / "templates"
+TEMPLATES = Jinja2Templates(
+    directory=str(_T_VERCEL if _T_VERCEL.exists() else _T_LOCAL)
+)
 
 app = FastAPI(title="광고 통합 대시보드")
 
