@@ -183,11 +183,28 @@ def dashboard(
         return RedirectResponse("/login", status_code=303)
 
     since, until = _parse_period(preset, start, end)
-    data = fetch_unified(since, until, force_refresh=bool(refresh))
 
-    # 집계
-    naver_rows = data.get("naver", [])
-    meta_rows = data.get("meta", [])
+    # ★ 스냅샷 우선 (빠름). force_refresh 시에만 라이브 fetch.
+    snapshot = _load_snapshot()
+    if snapshot and not refresh:
+        all_naver = snapshot.get("naver", [])
+        all_meta = snapshot.get("meta", [])
+        ga4_all = snapshot.get("ga4", {}) or {}
+        naver_rows = _filter_by_period(all_naver, since, until)
+        meta_rows = _filter_by_period(all_meta, since, until)
+        # GA4 daily도 기간 필터
+        ga4_daily_filtered = [r for r in (ga4_all.get("daily") or []) if since.isoformat() <= r.get("date","") <= until.isoformat()]
+        data = {
+            "naver": naver_rows, "meta": meta_rows,
+            "ga4": {**ga4_all, "daily": ga4_daily_filtered},
+            "from_cache": True,
+            "fetched_at": snapshot.get("generated_at", ""),
+        }
+    else:
+        data = fetch_unified(since, until, force_refresh=bool(refresh))
+        naver_rows = data.get("naver", [])
+        meta_rows = data.get("meta", [])
+
     all_rows = naver_rows + meta_rows
 
     def _kpi(rows):
@@ -427,7 +444,6 @@ def naver_detail(
         prev_prev = _filter_by_period(all_naver, prev_prev_since, prev_prev_until)
         snapshot_age = snapshot.get("generated_at")
     else:
-        # 스냅샷 없음 — 라이브 fetch 시도 (느릴 수 있음)
         try:
             cur = fetch_naver(since, until)
         except Exception as e:
@@ -435,6 +451,36 @@ def naver_detail(
             cur = []
         prev = []
         prev_prev = []
+
+    # 계정별 분해 + KPI
+    def _account_kpi(rows, account_filter=None, exclude_campaigns=None):
+        sel = rows
+        if account_filter:
+            sel = [r for r in sel if r.get("account") == account_filter]
+        if exclude_campaigns:
+            sel = [r for r in sel if not any(x in (r.get("campaign_name") or "") for x in exclude_campaigns)]
+        return _kpi(sel)
+
+    # 계정별 정보 (라벨 + KPI 3주) — 사용자 요청 3계정
+    account_labels = [
+        "로얄호프치킨(파워링크)",
+        "새 버거리(보승에프앤비)",
+        "(구)버거리",
+    ]
+    accounts_summary = []
+    for label in account_labels:
+        block = {
+            "label": label,
+            "kpi_cur": _account_kpi(cur, label),
+            "kpi_prev": _account_kpi(prev, label),
+            "kpi_prev_prev": _account_kpi(prev_prev, label),
+        }
+        # 로얄호프는 노출용 제외 버전도 (실질 성과)
+        if "로얄호프" in label:
+            block["kpi_cur_noexposure"] = _account_kpi(cur, label, exclude_campaigns=["노출용"])
+            block["kpi_prev_noexposure"] = _account_kpi(prev, label, exclude_campaigns=["노출용"])
+            block["kpi_prev_prev_noexposure"] = _account_kpi(prev_prev, label, exclude_campaigns=["노출용"])
+        accounts_summary.append(block)
 
     # 캠페인 단위 집계 (현재)
     camp_map = {}
@@ -481,6 +527,7 @@ def naver_detail(
             "prev_since": prev_since.isoformat(), "prev_until": prev_until.isoformat(),
             "prev_prev_since": prev_prev_since.isoformat(), "prev_prev_until": prev_prev_until.isoformat(),
             "kpi": kpi_cur, "kpi_prev": kpi_prev, "kpi_prev_prev": kpi_prev_prev,
+            "accounts_summary": accounts_summary,
             "campaigns": campaigns,
             "expensive": expensive,
             "insights": insights,

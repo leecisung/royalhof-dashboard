@@ -98,9 +98,9 @@ def _key(*parts) -> str:
 
 NAVER_ACCOUNTS = [
     # (env_prefix, label, brand)
-    ("NAVER_AD", "로얄호프치킨", "로얄호프"),
-    ("BURGEORI_NEW", "버거리(신)", "버거리"),
-    ("BURGEORI_OLD", "보승회관(694291)", "기타"),
+    ("NAVER_AD", "로얄호프치킨(파워링크)", "로얄호프치킨"),
+    ("BURGEORI_NEW", "새 버거리(보승에프앤비)", "버거리"),
+    ("BURGEORI_OLD", "(구)버거리", "버거리(구)"),
 ]
 
 

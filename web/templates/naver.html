@@ -75,6 +75,100 @@
     </table>
   </div>
 
+  <!-- 계정별 3주 추이 -->
+  {% for acc in accounts_summary %}
+  <div class="card">
+    <h2>{{ acc.label }} — 3주 추이</h2>
+    {% if acc.kpi_cur_noexposure is defined %}
+    <p style="font-size:12px;color:var(--muted);margin:0 0 8px">
+      ★ 로얄호프치킨은 '노출용' 캠페인이 노출의 99%+ 차지해 효율 지표를 왜곡 — '노출용 제외' 버전이 실질 운영 성과.
+    </p>
+    <h3 style="font-size:13px;margin:12px 0 6px;color:#374151">전체 (노출용 포함)</h3>
+    {% endif %}
+    <table>
+      <thead><tr>
+        <th class="left">지표</th>
+        <th>전전주</th><th>전주</th><th>이번주</th>
+        <th>전주 대비</th>
+      </tr></thead>
+      <tbody>
+        <tr><td class="left">노출</td>
+          <td>{{ "{:,}".format(acc.kpi_prev_prev.impressions) }}</td>
+          <td>{{ "{:,}".format(acc.kpi_prev.impressions) }}</td>
+          <td>{{ "{:,}".format(acc.kpi_cur.impressions) }}</td>
+          <td>{% if acc.kpi_prev.impressions %}{{ ((acc.kpi_cur.impressions - acc.kpi_prev.impressions)/acc.kpi_prev.impressions*100)|round(1) }}%{% else %}-{% endif %}</td>
+        </tr>
+        <tr><td class="left">클릭</td>
+          <td>{{ "{:,}".format(acc.kpi_prev_prev.clicks) }}</td>
+          <td>{{ "{:,}".format(acc.kpi_prev.clicks) }}</td>
+          <td>{{ "{:,}".format(acc.kpi_cur.clicks) }}</td>
+          <td>{% if acc.kpi_prev.clicks %}{{ ((acc.kpi_cur.clicks - acc.kpi_prev.clicks)/acc.kpi_prev.clicks*100)|round(1) }}%{% else %}-{% endif %}</td>
+        </tr>
+        <tr><td class="left">지출</td>
+          <td>{{ "{:,}".format(acc.kpi_prev_prev.spend) }}원</td>
+          <td>{{ "{:,}".format(acc.kpi_prev.spend) }}원</td>
+          <td>{{ "{:,}".format(acc.kpi_cur.spend) }}원</td>
+          <td>{% if acc.kpi_prev.spend %}{{ ((acc.kpi_cur.spend - acc.kpi_prev.spend)/acc.kpi_prev.spend*100)|round(1) }}%{% else %}-{% endif %}</td>
+        </tr>
+        <tr><td class="left">CTR</td>
+          <td>{{ "%.3f"|format(acc.kpi_prev_prev.ctr) }}%</td>
+          <td>{{ "%.3f"|format(acc.kpi_prev.ctr) }}%</td>
+          <td>{{ "%.3f"|format(acc.kpi_cur.ctr) }}%</td>
+          <td>{% if acc.kpi_prev.ctr %}{{ ((acc.kpi_cur.ctr - acc.kpi_prev.ctr)/acc.kpi_prev.ctr*100)|round(1) }}%{% else %}-{% endif %}</td>
+        </tr>
+        <tr><td class="left">CPC</td>
+          <td>{{ "{:,}".format(acc.kpi_prev_prev.cpc) }}원</td>
+          <td>{{ "{:,}".format(acc.kpi_prev.cpc) }}원</td>
+          <td>{{ "{:,}".format(acc.kpi_cur.cpc) }}원</td>
+          <td>{% if acc.kpi_prev.cpc %}{{ ((acc.kpi_cur.cpc - acc.kpi_prev.cpc)/acc.kpi_prev.cpc*100)|round(1) }}%{% else %}-{% endif %}</td>
+        </tr>
+      </tbody>
+    </table>
+    {% if acc.kpi_cur_noexposure is defined %}
+      <h3 style="font-size:13px;margin:18px 0 6px;color:#374151">노출용 제외 ★ 실질 운영성과</h3>
+      <table>
+        <thead><tr>
+          <th class="left">지표</th>
+          <th>전전주</th><th>전주</th><th>이번주</th>
+          <th>전주 대비</th>
+        </tr></thead>
+        <tbody>
+          <tr><td class="left">노출</td>
+            <td>{{ "{:,}".format(acc.kpi_prev_prev_noexposure.impressions) }}</td>
+            <td>{{ "{:,}".format(acc.kpi_prev_noexposure.impressions) }}</td>
+            <td>{{ "{:,}".format(acc.kpi_cur_noexposure.impressions) }}</td>
+            <td>{% if acc.kpi_prev_noexposure.impressions %}{{ ((acc.kpi_cur_noexposure.impressions - acc.kpi_prev_noexposure.impressions)/acc.kpi_prev_noexposure.impressions*100)|round(1) }}%{% else %}-{% endif %}</td>
+          </tr>
+          <tr><td class="left">클릭</td>
+            <td>{{ "{:,}".format(acc.kpi_prev_prev_noexposure.clicks) }}</td>
+            <td>{{ "{:,}".format(acc.kpi_prev_noexposure.clicks) }}</td>
+            <td>{{ "{:,}".format(acc.kpi_cur_noexposure.clicks) }}</td>
+            <td>{% if acc.kpi_prev_noexposure.clicks %}{{ ((acc.kpi_cur_noexposure.clicks - acc.kpi_prev_noexposure.clicks)/acc.kpi_prev_noexposure.clicks*100)|round(1) }}%{% else %}-{% endif %}</td>
+          </tr>
+          <tr><td class="left">지출</td>
+            <td>{{ "{:,}".format(acc.kpi_prev_prev_noexposure.spend) }}원</td>
+            <td>{{ "{:,}".format(acc.kpi_prev_noexposure.spend) }}원</td>
+            <td>{{ "{:,}".format(acc.kpi_cur_noexposure.spend) }}원</td>
+            <td>{% if acc.kpi_prev_noexposure.spend %}{{ ((acc.kpi_cur_noexposure.spend - acc.kpi_prev_noexposure.spend)/acc.kpi_prev_noexposure.spend*100)|round(1) }}%{% else %}-{% endif %}</td>
+          </tr>
+          <tr><td class="left">CTR</td>
+            <td>{{ "%.3f"|format(acc.kpi_prev_prev_noexposure.ctr) }}%</td>
+            <td>{{ "%.3f"|format(acc.kpi_prev_noexposure.ctr) }}%</td>
+            <td>{{ "%.3f"|format(acc.kpi_cur_noexposure.ctr) }}%</td>
+            <td>{% if acc.kpi_prev_noexposure.ctr %}{{ ((acc.kpi_cur_noexposure.ctr - acc.kpi_prev_noexposure.ctr)/acc.kpi_prev_noexposure.ctr*100)|round(1) }}%{% else %}-{% endif %}</td>
+          </tr>
+          <tr><td class="left">CPC</td>
+            <td>{{ "{:,}".format(acc.kpi_prev_prev_noexposure.cpc) }}원</td>
+            <td>{{ "{:,}".format(acc.kpi_prev_noexposure.cpc) }}원</td>
+            <td>{{ "{:,}".format(acc.kpi_cur_noexposure.cpc) }}원</td>
+            <td>{% if acc.kpi_prev_noexposure.cpc %}{{ ((acc.kpi_cur_noexposure.cpc - acc.kpi_prev_noexposure.cpc)/acc.kpi_prev_noexposure.cpc*100)|round(1) }}%{% else %}-{% endif %}</td>
+          </tr>
+        </tbody>
+      </table>
+    {% endif %}
+  </div>
+  {% endfor %}
+
   <!-- AI 인사이트 -->
   <div class="card">
     <h2>🤖 인사이트 <span class="meta">룰베이스 자동 생성</span></h2>
