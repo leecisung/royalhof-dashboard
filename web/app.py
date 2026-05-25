@@ -46,18 +46,26 @@ from web.analytics import (
 
 load_dotenv(ROOT / ".env")
 
-# 스냅샷 파일 (로컬 prefetch_snapshot.py가 생성. /naver, /meta가 우선 읽음)
+# 스냅샷 파일 (로컬 prefetch_snapshot.py가 생성 후 api/snapshot.json 으로도 복사)
 import json as _json
-SNAPSHOT_PATH = ROOT / "data" / "snapshots" / "latest.json"
+_SNAPSHOT_CANDIDATES = [
+    ROOT / "api" / "snapshot.json",            # Vercel 함수 번들 표준 위치
+    ROOT / "data" / "snapshots" / "latest.json",  # 로컬 dev
+]
 
 
 def _load_snapshot() -> Optional[dict]:
-    try:
-        if SNAPSHOT_PATH.exists():
-            return _json.loads(SNAPSHOT_PATH.read_text(encoding="utf-8"))
-    except Exception:
-        pass
+    for p in _SNAPSHOT_CANDIDATES:
+        try:
+            if p.exists():
+                return _json.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            continue
     return None
+
+
+# 디버그용 (healthz에서 표시)
+SNAPSHOT_PATH = _SNAPSHOT_CANDIDATES[0]
 
 
 def _filter_by_period(rows: list, since: date, until: date) -> list:
