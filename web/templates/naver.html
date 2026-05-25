@@ -191,12 +191,67 @@
     </div>
   </div>
 
-  <!-- 비싼 캠페인 권고 -->
+  <!-- 2. 조치 권장 키워드 (캠페인 아님 — 키워드 단위) -->
   <div class="card">
-    <h2>조치 권장 (CPC 10k 초과 캠페인)</h2>
-    {% if expensive %}
+    <h2>2. 조치 권장 키워드 (키워드 단위)</h2>
     <p style="font-size:12px;color:var(--muted);margin:0 0 10px">
-      클릭당 비용이 10,000원 초과인 캠페인. CPC 30k+는 OFF, 10~30k는 입찰가 인하 권장.
+      기준: <strong>평균 CPC 10,000원 초과</strong>. 캠페인을 끄지 말고 해당 키워드의 <strong>입찰가를 내리거나 OFF</strong>.
+      <br>※ 70원전략·노출용 캠페인은 분석 대상에서 제외 (다량 키워드 + 노출 확보 전용).
+    </p>
+    {% if expensive_keywords %}
+    <p style="font-size:13px;margin:8px 0 12px">
+      → <strong>{{ expensive_kw_count }}개 키워드, 합계 {{ "{:,}".format(expensive_total_cost) }}원</strong> 집행
+    </p>
+    <table>
+      <thead><tr>
+        <th class="left">키워드</th>
+        <th class="left">계정 · 캠페인</th>
+        <th>노출</th><th>클릭</th><th>CPC</th><th>비용</th>
+        <th class="left">권고</th>
+      </tr></thead>
+      <tbody>
+        {% for k in expensive_keywords %}
+          <tr>
+            <td class="left"><strong>{{ k.keyword }}</strong></td>
+            <td class="left">
+              {{ k.account }}
+              <div style="font-size:11px;color:var(--muted)">{{ k.campaign_name }} · {{ k.group_name }}</div>
+            </td>
+            <td>{{ "{:,}".format(k.impressions) }}</td>
+            <td>{{ k.clicks }}</td>
+            <td><strong>{{ "{:,}".format(k.cpc) }}원</strong></td>
+            <td>{{ "{:,}".format(k.cost) }}원</td>
+            <td class="left">
+              <strong>{{ k.action_label }}</strong>
+              <div style="font-size:11px;color:var(--muted)">{{ k.action_reason }}</div>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% elif snapshot_age %}
+    <p style="color:var(--muted)">CPC 10k 이상 키워드 없음 — 효율 양호.</p>
+    {% else %}
+    <p style="color:var(--neg)">⚠️ 키워드 단위 데이터가 스냅샷에 없음. <code>python scripts/prefetch_snapshot.py</code> 실행 후 다시 확인하세요.</p>
+    {% endif %}
+  </div>
+
+  <!-- 3. 전략 제언 -->
+  <div class="card">
+    <h2>3. 전략 제언</h2>
+    <ul>
+      {% for note in strategy_notes %}
+        <li>{{ note | safe }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+
+  <!-- (참고) 효율 의심 캠페인 단위 -->
+  {% if expensive %}
+  <div class="card">
+    <h2>(참고) CPC 10k 초과 캠페인</h2>
+    <p style="font-size:12px;color:var(--muted);margin:0 0 8px">
+      위 키워드 권고가 더 정확. 캠페인 단위 통계는 보조 참고용.
     </p>
     <table>
       <thead><tr>
@@ -221,10 +276,8 @@
         {% endfor %}
       </tbody>
     </table>
-    {% else %}
-    <p style="color:var(--muted)">조치 필요한 캠페인 없음 — CPC 10k 이하 양호.</p>
-    {% endif %}
   </div>
+  {% endif %}
 
   <!-- 캠페인 전체 -->
   <div class="card">

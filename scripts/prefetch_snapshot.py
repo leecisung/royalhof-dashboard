@@ -35,6 +35,92 @@ SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
 DAYS = 28
 
 
+SKIP_CAMPAIGN_KEYWORDS = ("70원전략", "노출용")  # 키워드 단위 fetch에서 제외 (양이 큼)
+
+
+def fetch_naver_keywords_expensive(since: date, until: date, min_cost: int = 0) -> list[dict]:
+    """
+    비-70원전략, 비-노출용 캠페인의 키워드 단위 통계.
+    반환: [{account, campaign_id, campaign_name, group_id, group_name, keyword_id, keyword, bid, impressions, clicks, cost, cpc}]
+    """
+    days = (until - since).days + 1
+    out = []
+    for prefix, label, brand in NAVER_ACCOUNTS:
+        api = _naver_api(prefix)
+        if not api:
+            continue
+        # 캠페인 목록
+        try:
+            camps = api._request("GET", "/ncc/campaigns")
+        except Exception as e:
+            logging.warning("[KW] %s 캠페인 조회 실패: %s", label, e)
+            continue
+        if not isinstance(camps, list):
+            continue
+
+        for c in camps:
+            cname = c.get("name", "")
+            cid = c.get("nccCampaignId", "")
+            if not cid or any(s in cname for s in SKIP_CAMPAIGN_KEYWORDS):
+                continue
+            # 캠페인 → 광고그룹들
+            try:
+                groups = api._request("GET", "/ncc/adgroups", params={"nccCampaignId": cid})
+            except Exception as e:
+                logging.warning("[KW] %s 그룹 조회 실패: %s", cname, e)
+                continue
+            if not isinstance(groups, list):
+                continue
+            for g in groups:
+                gid = g.get("nccAdgroupId", "")
+                gname = g.get("name", "")
+                if not gid:
+                    continue
+                # 그룹 → 키워드들
+                try:
+                    keywords = api.get_keywords_by_group(gid)
+                except Exception as e:
+                    logging.warning("[KW] %s 키워드 조회 실패: %s", gname, e)
+                    continue
+                if not keywords:
+                    continue
+                kw_ids = [k.get("nccKeywordId") for k in keywords if k.get("nccKeywordId")]
+                if not kw_ids:
+                    continue
+                # 키워드 → 기간 통계
+                try:
+                    stats = api.get_stats(kw_ids, days=days)
+                except Exception as e:
+                    logging.warning("[KW] %s stats 실패: %s", gname, e)
+                    continue
+                # 키워드 dict로 매핑
+                kw_by_id = {k.get("nccKeywordId"): k for k in keywords}
+                for kid, s in stats.items():
+                    kw = kw_by_id.get(kid, {})
+                    cost = s.get("cost_14d", 0)
+                    clicks = s.get("clicks_14d", 0)
+                    imp = s.get("impressions_14d", 0)
+                    if cost < min_cost and clicks == 0:
+                        continue  # 노출만 있고 비용 없는 키워드 컷
+                    cpc = (cost / clicks) if clicks else 0
+                    out.append({
+                        "account": label,
+                        "brand": brand,
+                        "campaign_id": cid,
+                        "campaign_name": cname,
+                        "group_id": gid,
+                        "group_name": gname,
+                        "keyword_id": kid,
+                        "keyword": kw.get("keyword", ""),
+                        "bid": int(kw.get("bidAmt", 0) or 0),
+                        "impressions": imp,
+                        "clicks": clicks,
+                        "cost": cost,
+                        "cpc": int(cpc),
+                    })
+    return out
+
+
 def main():
     try:
         sys.stdout.reconfigure(encoding="utf-8")
@@ -50,6 +136,11 @@ def main():
     logging.info("Naver fetch 시작 (시간 걸림 — 3계정 × 캠페인 × 일별 stats)")
     naver_rows = fetch_naver(since, until)
     logging.info("Naver: %d개 row", len(naver_rows))
+
+    # 1-2. Naver 키워드 단위 (비-70원/비-노출용 캠페인만)
+    logging.info("Naver 키워드 단위 fetch 시작 (입찰기/고비용/일반 캠페인)")
+    naver_keywords = fetch_naver_keywords_expensive(since, until)
+    logging.info("Naver 키워드: %d개 row", len(naver_keywords))
 
     # 2. Meta 일별
     logging.info("Meta fetch")
@@ -67,6 +158,7 @@ def main():
         "until": until.isoformat(),
         "days": DAYS,
         "naver": naver_rows,
+        "naver_keywords": naver_keywords,
         "meta": meta_rows,
         "ga4": ga4,
     }

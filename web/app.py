@@ -507,16 +507,54 @@ def naver_detail(
     kpi_prev = _kpi(prev)
     kpi_prev_prev = _kpi(prev_prev)
 
-    # 비싼 캠페인을 키워드 권고로 활용 (현재 API에서는 캠페인 단위 limit, 키워드 권고는 별도 fetch 필요)
-    # 우선 캠페인 단위 권고로 표시
-    expensive = []
+    # 키워드 단위 권고 (스냅샷에서)
+    expensive_keywords = []
+    if snapshot:
+        all_kws = snapshot.get("naver_keywords", []) or []
+        for kw in all_kws:
+            cpc = kw.get("cpc", 0)
+            clicks = kw.get("clicks", 0)
+            imp = kw.get("impressions", 0)
+            action = classify_keyword_action(cpc, imp, clicks)
+            if action:
+                ac_label, ac_reason = action
+                expensive_keywords.append({**kw, "action_label": ac_label, "action_reason": ac_reason})
+        # 비용 큰 순
+        expensive_keywords.sort(key=lambda k: -k.get("cost", 0))
+
+    # (대체용) 캠페인 단위에서 cpc 큰 것도 같이 보여줌
+    expensive_campaigns = []
     for c in campaigns:
         action = classify_keyword_action(c["cpc"], c["impressions"], c["clicks"])
         if action:
-            label, reason = action
-            expensive.append({**c, "action_label": label, "action_reason": reason})
+            ac_label, ac_reason = action
+            expensive_campaigns.append({**c, "action_label": ac_label, "action_reason": ac_reason})
 
-    insights = generate_naver_insights(kpi_cur, kpi_prev, expensive)
+    insights = generate_naver_insights(kpi_cur, kpi_prev, expensive_keywords or expensive_campaigns)
+
+    # 전략 제언 (룰베이스 자동 텍스트)
+    expensive_total_cost = sum(k["cost"] for k in expensive_keywords)
+    expensive_kw_count = len(expensive_keywords)
+    off_targets = sum(1 for k in expensive_keywords if k["cpc"] >= 30000)
+    reduce_targets = sum(1 for k in expensive_keywords if 10000 <= k["cpc"] < 30000)
+    strategy_notes = []
+    if expensive_kw_count:
+        strategy_notes.append(
+            f"이번 기간 CPC 10k 초과 키워드 <strong>{expensive_kw_count}개</strong>가 "
+            f"<strong>{int(expensive_total_cost):,}원</strong> 집행. "
+            f"CPC 30k+ {off_targets}개 → OFF, 10~30k {reduce_targets}개 → 입찰가 단계적 인하 권장."
+        )
+    royal_70won_active = any("70원전략" in r.get("campaign_name", "") for r in cur)
+    if royal_70won_active:
+        strategy_notes.append("로얄호프치킨 70원전략 캠페인 집행 중 — 키워드 풀 자연선택 진행 (별도 weekly_pruner.py 관리).")
+    if any("입찰기" in c.get("campaign_name", "") or "고비용" in c.get("campaign_name", "") for c in campaigns):
+        strategy_notes.append(
+            "입찰기·고비용 계열 캠페인 존재 — 캠페인을 끄지 말고, 비싼 키워드 입찰가를 단계적 인하 "
+            "(예: 5만원→1만원→3천원) 후 노출·클릭 변화 관찰. 노출 유지되면 더 인하, 급감하면 직전 단계로 복귀."
+        )
+    if expensive_kw_count == 0:
+        strategy_notes.append("CPC 10k 이상 키워드 없음 — 효율 양호. 추이만 관찰.")
+
 
     return TEMPLATES.TemplateResponse(
         request,
@@ -529,7 +567,11 @@ def naver_detail(
             "kpi": kpi_cur, "kpi_prev": kpi_prev, "kpi_prev_prev": kpi_prev_prev,
             "accounts_summary": accounts_summary,
             "campaigns": campaigns,
-            "expensive": expensive,
+            "expensive": expensive_campaigns,
+            "expensive_keywords": expensive_keywords[:50],
+            "expensive_kw_count": expensive_kw_count,
+            "expensive_total_cost": int(expensive_total_cost),
+            "strategy_notes": strategy_notes,
             "insights": insights,
             "snapshot_age": snapshot_age,
             "has_password": bool(_password()),

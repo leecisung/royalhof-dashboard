@@ -122,55 +122,72 @@ class NaverAdAPI:
 
     def get_stats(self, keyword_ids: list[str], days: int = 14) -> dict[str, dict]:
         """
-        키워드 ID 리스트의 최근 N일 통계 반환.
-        반환값: {keyword_id: {"impressions": int, "clicks": int, "cost": int}}
+        키워드 ID 리스트의 최근 N일 기간 합산 통계 반환.
+
+        Naver /stats 엔드포인트는 ids=복수 호출 시 timeUnit=day 가 무시되고
+        기간 합산 1행/키워드로 응답함. 응답 shape:
+            {"data": [{"id": "...", "clkCnt": int, "impCnt": int, "salesAmt": int}, ...]}
+
+        7일/14일/28일 분리가 필요한 경우 두 번 호출.
+
+        반환값:
+            {kw_id: {
+                "impressions": int,        # 기간(days) 합산
+                "clicks": int,
+                "cost": int,
+                "impressions_14d": int,    # legacy alias = 기간 합산 (weekly_pruner 호환)
+                "clicks_14d": int,
+                "cost_14d": int,
+                "impressions_7d": int,     # 최근 7일
+                "clicks_7d": int,
+            }}
         """
+        if not keyword_ids:
+            return {}
+
         until = datetime.today().date() - timedelta(days=1)
-        since = until - timedelta(days=days - 1)
+        since_main = until - timedelta(days=days - 1)
+        since_7d = until - timedelta(days=6)
+
+        def _fetch_period(s_date, u_date) -> dict[str, dict]:
+            out: dict[str, dict] = {}
+            for i in range(0, len(keyword_ids), BATCH_SIZE):
+                batch = keyword_ids[i : i + BATCH_SIZE]
+                params = {
+                    "ids": ",".join(batch),
+                    "fields": '["clkCnt","impCnt","salesAmt"]',
+                    "timeRange": json.dumps({"since": str(s_date), "until": str(u_date)}),
+                }
+                res = self._request("GET", "/stats", params=params)
+                data = res.get("data", []) if isinstance(res, dict) else []
+                for row in data:
+                    kid = row.get("id")
+                    if not kid:
+                        continue
+                    out[kid] = {
+                        "impressions": int(row.get("impCnt", 0) or 0),
+                        "clicks": int(row.get("clkCnt", 0) or 0),
+                        "cost": int(row.get("salesAmt", 0) or 0),
+                    }
+            return out
+
+        main = _fetch_period(since_main, until)
+        seven = main if days == 7 else _fetch_period(since_7d, until)
 
         stats: dict[str, dict] = {}
-        # 100개씩 배치
-        for i in range(0, len(keyword_ids), BATCH_SIZE):
-            batch = keyword_ids[i : i + BATCH_SIZE]
-            path = "/stats"
-            params = {
-                "ids": ",".join(batch),
-                "fields": '["clkCnt","impCnt","salesAmt","ctr","cpc"]',
-                "timeUnit": "day",
-                "dateRange": json.dumps({"since": str(since), "until": str(until)}),
+        for kid in set(main) | set(seven):
+            m = main.get(kid, {})
+            s7 = seven.get(kid, {})
+            stats[kid] = {
+                "impressions": m.get("impressions", 0),
+                "clicks": m.get("clicks", 0),
+                "cost": m.get("cost", 0),
+                "impressions_14d": m.get("impressions", 0),
+                "clicks_14d": m.get("clicks", 0),
+                "cost_14d": m.get("cost", 0),
+                "impressions_7d": s7.get("impressions", 0),
+                "clicks_7d": s7.get("clicks", 0),
             }
-            result = self._request("GET", path, params=params)
-            for stat_item in result.get("data", {}).get("statList", []):
-                kw_id = stat_item.get("id")
-                if not kw_id:
-                    continue
-                total_imp = 0
-                total_clk = 0
-                total_cost = 0
-                # 7일 집계용
-                imp_7d = 0
-                clk_7d = 0
-                cutoff = until - timedelta(days=6)
-
-                for row in stat_item.get("statData", []):
-                    dt = row.get("date", "")
-                    imp = int(row.get("impCnt", 0))
-                    clk = int(row.get("clkCnt", 0))
-                    cost = int(row.get("salesAmt", 0))
-                    total_imp += imp
-                    total_clk += clk
-                    total_cost += cost
-                    if dt and datetime.strptime(dt, "%Y-%m-%d").date() >= cutoff:
-                        imp_7d += imp
-                        clk_7d += clk
-
-                stats[kw_id] = {
-                    "impressions_14d": total_imp,
-                    "clicks_14d": total_clk,
-                    "cost_14d": total_cost,
-                    "impressions_7d": imp_7d,
-                    "clicks_7d": clk_7d,
-                }
         return stats
 
     # ──────────────────────────────────────────────
