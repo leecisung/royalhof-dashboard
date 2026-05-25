@@ -46,6 +46,26 @@ from web.analytics import (
 
 load_dotenv(ROOT / ".env")
 
+# 스냅샷 파일 (로컬 prefetch_snapshot.py가 생성. /naver, /meta가 우선 읽음)
+import json as _json
+SNAPSHOT_PATH = ROOT / "data" / "snapshots" / "latest.json"
+
+
+def _load_snapshot() -> Optional[dict]:
+    try:
+        if SNAPSHOT_PATH.exists():
+            return _json.loads(SNAPSHOT_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return None
+
+
+def _filter_by_period(rows: list, since: date, until: date) -> list:
+    """스냅샷 row 중 [since, until] 기간만."""
+    s, u = str(since), str(until)
+    return [r for r in rows if s <= r.get("date", "") <= u]
+
+
 # 템플릿 위치: web/templates/ (로컬) 또는 api/templates/ (Vercel 번들).
 _T_LOCAL = Path(__file__).parent / "templates"
 _T_VERCEL = ROOT / "api" / "templates"
@@ -279,10 +299,14 @@ def meta_detail(
     prev_until = since - timedelta(days=1)
     prev_since = prev_until - timedelta(days=days - 1)
 
-    # 현재 + 직전기간 fetch
-    ad_sets = fetch_meta_ad_sets(since, until)
-    ads = fetch_meta_ads(since, until)
-    prev_ad_sets = fetch_meta_ad_sets(prev_since, prev_until)
+    # 현재 + 직전기간 fetch — Meta는 라이브 fetch가 빨라서 그대로 실행. 실패 시 빈 리스트.
+    try:
+        ad_sets = fetch_meta_ad_sets(since, until)
+        ads = fetch_meta_ads(since, until)
+        prev_ad_sets = fetch_meta_ad_sets(prev_since, prev_until)
+    except Exception as e:
+        logger.warning("[/meta] live fetch 실패: %s", e)
+        ad_sets, ads, prev_ad_sets = [], [], []
 
     # 캠페인 단위로 합산 (ad_sets 기준)
     camp_map = {}
@@ -385,21 +409,24 @@ def naver_detail(
     prev_prev_until = prev_since - timedelta(days=1)
     prev_prev_since = prev_prev_until - timedelta(days=days - 1)
 
-    import time
-    t0 = time.time()
-    # 현재 기간만 직접 fetch. prev/prev_prev는 캐시 hit 시에만 표시 (Vercel 함수 시간 제약)
-    cur = fetch_naver(since, until)
-    logger.info("[/naver] fetch_naver took %.1fs", time.time() - t0)
-
-    def _cached_or_empty(s, u):
+    # ★ 스냅샷 우선. 없으면 라이브 fetch 시도. 로컬 prefetch_snapshot.py로 매일 갱신.
+    snapshot = _load_snapshot()
+    snapshot_age = None
+    if snapshot:
+        all_naver = snapshot.get("naver", [])
+        cur = _filter_by_period(all_naver, since, until)
+        prev = _filter_by_period(all_naver, prev_since, prev_until)
+        prev_prev = _filter_by_period(all_naver, prev_prev_since, prev_prev_until)
+        snapshot_age = snapshot.get("generated_at")
+    else:
+        # 스냅샷 없음 — 라이브 fetch 시도 (느릴 수 있음)
         try:
-            from lib.dashboard_data import _cache_get, _key
-            cached = _cache_get(_key("unified_v1", str(s), str(u)))
-            return cached.get("naver", []) if cached else []
-        except Exception:
-            return []
-    prev = _cached_or_empty(prev_since, prev_until)
-    prev_prev = _cached_or_empty(prev_prev_since, prev_prev_until)
+            cur = fetch_naver(since, until)
+        except Exception as e:
+            logger.warning("[/naver] live fetch 실패: %s", e)
+            cur = []
+        prev = []
+        prev_prev = []
 
     # 캠페인 단위 집계 (현재)
     camp_map = {}
@@ -449,6 +476,7 @@ def naver_detail(
             "campaigns": campaigns,
             "expensive": expensive,
             "insights": insights,
+            "snapshot_age": snapshot_age,
             "has_password": bool(_password()),
         },
     )

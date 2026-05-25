@@ -18,7 +18,8 @@
       </label>
       <button type="submit">적용</button>
       <span style="margin-left:auto;font-size:12px;color:var(--muted)">
-        🟢 Naver 3계정 ({{ since }} ~ {{ until }} · {{ days }}일) — 3주 추이 비교
+        🟢 Naver 3계정 ({{ since }} ~ {{ until }} · {{ days }}일) — 3주 추이
+        {% if snapshot_age %}<br/><span style="color:#666">📦 스냅샷 {{ snapshot_age }}</span>{% endif %}
       </span>
     </form>
   </div>
