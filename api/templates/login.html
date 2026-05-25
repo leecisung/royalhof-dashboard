@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}로그인 — 광고 통합 대시보드{% endblock %}
-{% block body %}
+{% set hide_header = True %}
+{% block content %}
 <main style="display:flex;align-items:center;justify-content:center;min-height:80vh">
   <form method="post" action="/login" class="card" style="width:340px">
     <h2>🔐 광고 대시보드</h2>

@@ -27,7 +27,19 @@ from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from dotenv import load_dotenv
 
-from lib.dashboard_data import fetch_unified
+from lib.dashboard_data import (
+    fetch_unified,
+    fetch_meta_ad_sets,
+    fetch_meta_ads,
+    fetch_naver,
+)
+from web.analytics import (
+    classify_budget_decision,
+    classify_creative_status,
+    classify_keyword_action,
+    generate_meta_insights,
+    generate_naver_insights,
+)
 
 load_dotenv(ROOT / ".env")
 
@@ -227,6 +239,294 @@ def dashboard(
             "has_password": bool(_password()),
         },
     )
+
+
+# ─────────────────────────────────────────────
+# /meta — Meta 상세 분석 페이지
+# ─────────────────────────────────────────────
+
+def _kpi(rows):
+    imp = sum(r.get("impressions", 0) for r in rows)
+    clk = sum(r.get("clicks", 0) for r in rows)
+    cost = sum(r.get("spend", 0) for r in rows)
+    conv = sum(r.get("conversions", 0) for r in rows)
+    return {
+        "impressions": imp, "clicks": clk,
+        "spend": int(cost), "conversions": conv,
+        "ctr": (clk / imp * 100) if imp else 0.0,
+        "cpc": int(cost / clk) if clk else 0,
+        "cpa": int(cost / conv) if conv else 0,
+        "cpm": int(cost / imp * 1000) if imp else 0,
+    }
+
+
+@app.get("/meta", response_class=HTMLResponse)
+def meta_detail(
+    request: Request,
+    preset: str = "7d",
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    session: Optional[str] = Cookie(None),
+):
+    if not _check_auth(session):
+        return RedirectResponse("/login", status_code=303)
+
+    since, until = _parse_period(preset, start, end)
+    days = (until - since).days + 1
+    prev_until = since - timedelta(days=1)
+    prev_since = prev_until - timedelta(days=days - 1)
+
+    # 현재 + 직전기간 fetch
+    ad_sets = fetch_meta_ad_sets(since, until)
+    ads = fetch_meta_ads(since, until)
+    prev_ad_sets = fetch_meta_ad_sets(prev_since, prev_until)
+
+    # 캠페인 단위로 합산 (ad_sets 기준)
+    camp_map = {}
+    for a in ad_sets:
+        cid = a["campaign_id"]
+        if cid not in camp_map:
+            camp_map[cid] = {
+                "campaign_id": cid,
+                "campaign_name": a["campaign_name"],
+                "impressions": 0, "clicks": 0, "spend": 0.0,
+                "conversions": 0, "reach": 0,
+            }
+        camp = camp_map[cid]
+        camp["impressions"] += a["impressions"]
+        camp["clicks"] += a["clicks"]
+        camp["spend"] += a["spend"]
+        camp["conversions"] += a["conversions"]
+        camp["reach"] += a["reach"]
+
+    campaigns = []
+    for c in camp_map.values():
+        c["ctr"] = (c["clicks"] / c["impressions"] * 100) if c["impressions"] else 0.0
+        c["cpc"] = int(c["spend"] / c["clicks"]) if c["clicks"] else 0
+        c["cpa"] = int(c["spend"] / c["conversions"]) if c["conversions"] else 0
+        c["spend"] = int(c["spend"])
+        decision, reason = classify_budget_decision(c["spend"], c["conversions"], c["cpa"])
+        c["budget_decision"] = decision
+        c["budget_reason"] = reason
+        campaigns.append(c)
+    campaigns.sort(key=lambda x: -x["spend"])
+
+    # ad set 정리
+    for a in ad_sets:
+        a["spend_int"] = int(a["spend"])
+        a["cpa_int"] = int(a["cpa"])
+        decision, reason = classify_budget_decision(a["spend"], a["conversions"], a["cpa"])
+        a["budget_decision"] = decision
+        a["budget_reason"] = reason
+    ad_sets.sort(key=lambda x: -x["spend"])
+
+    # ads (소재) — Winner/Learning/Kill 분류
+    for a in ads:
+        a["spend_int"] = int(a["spend"])
+        a["cpa_int"] = int(a["cpa"])
+        status, reason = classify_creative_status(
+            ctr=a["ctr"], cpa=a["cpa"], conv=a["conversions"],
+            spend=a["spend"],
+        )
+        a["creative_status"] = status
+        a["creative_reason"] = reason
+    ads.sort(key=lambda x: -x["spend"])
+
+    # KPI 현재 + 직전
+    cur_kpi = _kpi(ad_sets)
+    prev_kpi = _kpi(prev_ad_sets) if prev_ad_sets else None
+
+    # avg frequency
+    cur_kpi["frequency"] = (
+        sum(a["frequency"] * a["impressions"] for a in ad_sets) /
+        sum(a["impressions"] for a in ad_sets)
+    ) if sum(a["impressions"] for a in ad_sets) else 0
+
+    insights = generate_meta_insights(cur_kpi, prev_kpi, ad_sets, ads)
+
+    return TEMPLATES.TemplateResponse(
+        request,
+        "meta.html",
+        {
+            "preset": preset, "since": since.isoformat(),
+            "until": until.isoformat(), "days": days,
+            "kpi": cur_kpi, "prev_kpi": prev_kpi,
+            "campaigns": campaigns,
+            "ad_sets": ad_sets[:30],
+            "ads": ads[:50],
+            "insights": insights,
+            "has_password": bool(_password()),
+        },
+    )
+
+
+# ─────────────────────────────────────────────
+# /naver — Naver 상세 분석 페이지
+# ─────────────────────────────────────────────
+
+@app.get("/naver", response_class=HTMLResponse)
+def naver_detail(
+    request: Request,
+    preset: str = "7d",
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    session: Optional[str] = Cookie(None),
+):
+    if not _check_auth(session):
+        return RedirectResponse("/login", status_code=303)
+
+    since, until = _parse_period(preset, start, end)
+    days = (until - since).days + 1
+    prev_until = since - timedelta(days=1)
+    prev_since = prev_until - timedelta(days=days - 1)
+    prev_prev_until = prev_since - timedelta(days=1)
+    prev_prev_since = prev_prev_until - timedelta(days=days - 1)
+
+    cur = fetch_naver(since, until)
+    prev = fetch_naver(prev_since, prev_until)
+    prev_prev = fetch_naver(prev_prev_since, prev_prev_until)
+
+    # 캠페인 단위 집계 (현재)
+    camp_map = {}
+    for r in cur:
+        cid = r["campaign_id"]
+        if cid not in camp_map:
+            camp_map[cid] = {
+                "campaign_id": cid, "campaign_name": r["campaign_name"],
+                "account": r["account"], "brand": r["brand"],
+                "impressions": 0, "clicks": 0, "spend": 0,
+            }
+        camp_map[cid]["impressions"] += r["impressions"]
+        camp_map[cid]["clicks"] += r["clicks"]
+        camp_map[cid]["spend"] += r["spend"]
+    campaigns = []
+    for c in camp_map.values():
+        c["ctr"] = (c["clicks"] / c["impressions"] * 100) if c["impressions"] else 0.0
+        c["cpc"] = int(c["spend"] / c["clicks"]) if c["clicks"] else 0
+        campaigns.append(c)
+    campaigns.sort(key=lambda x: -x["spend"])
+
+    # 3주 추이
+    kpi_cur = _kpi(cur)
+    kpi_prev = _kpi(prev)
+    kpi_prev_prev = _kpi(prev_prev)
+
+    # 비싼 캠페인을 키워드 권고로 활용 (현재 API에서는 캠페인 단위 limit, 키워드 권고는 별도 fetch 필요)
+    # 우선 캠페인 단위 권고로 표시
+    expensive = []
+    for c in campaigns:
+        action = classify_keyword_action(c["cpc"], c["impressions"], c["clicks"])
+        if action:
+            label, reason = action
+            expensive.append({**c, "action_label": label, "action_reason": reason})
+
+    insights = generate_naver_insights(kpi_cur, kpi_prev, expensive)
+
+    return TEMPLATES.TemplateResponse(
+        request,
+        "naver.html",
+        {
+            "preset": preset, "since": since.isoformat(),
+            "until": until.isoformat(), "days": days,
+            "prev_since": prev_since.isoformat(), "prev_until": prev_until.isoformat(),
+            "prev_prev_since": prev_prev_since.isoformat(), "prev_prev_until": prev_prev_until.isoformat(),
+            "kpi": kpi_cur, "kpi_prev": kpi_prev, "kpi_prev_prev": kpi_prev_prev,
+            "campaigns": campaigns,
+            "expensive": expensive,
+            "insights": insights,
+            "has_password": bool(_password()),
+        },
+    )
+
+
+# ─────────────────────────────────────────────
+# 액션 라우트 (POST — 실제 광고 시스템 변경)
+# ─────────────────────────────────────────────
+
+def _require_action_auth(session: Optional[str]):
+    """액션은 항상 비밀번호 게이트 통과 필수."""
+    if not _password():
+        raise HTTPException(403, "DASHBOARD_PASSWORD 미설정 시 액션 비활성")
+    if not session or session not in _SESSIONS:
+        raise HTTPException(401, "로그인 필요")
+
+
+@app.post("/actions/meta/pause-adset")
+def action_meta_pause_adset(
+    ad_set_id: str = Form(...),
+    session: Optional[str] = Cookie(None),
+):
+    _require_action_auth(session)
+    from lib.meta_api import MetaAdsAPI, MetaProtectedError
+    try:
+        api = MetaAdsAPI.from_env()
+        api.pause_ad_set(ad_set_id)
+        return JSONResponse({"ok": True, "ad_set_id": ad_set_id, "status": "paused"})
+    except MetaProtectedError as e:
+        return JSONResponse({"ok": False, "error": f"보호된 캠페인: {e}"}, status_code=403)
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
+@app.post("/actions/meta/update-budget")
+def action_meta_update_budget(
+    ad_set_id: str = Form(...),
+    new_budget_krw: int = Form(...),
+    session: Optional[str] = Cookie(None),
+):
+    _require_action_auth(session)
+    from lib.meta_api import MetaAdsAPI, MetaProtectedError
+    try:
+        api = MetaAdsAPI.from_env()
+        api.update_ad_set_budget(ad_set_id, new_budget_krw)
+        return JSONResponse({"ok": True, "ad_set_id": ad_set_id, "new_budget": new_budget_krw})
+    except MetaProtectedError as e:
+        return JSONResponse({"ok": False, "error": f"보호된 캠페인: {e}"}, status_code=403)
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
+@app.post("/actions/naver/update-bid")
+def action_naver_update_bid(
+    keyword_id: str = Form(...),
+    bid: int = Form(...),
+    account: str = Form("NAVER_AD"),  # NAVER_AD / BURGEORI_NEW / BURGEORI_OLD
+    session: Optional[str] = Cookie(None),
+):
+    _require_action_auth(session)
+    from lib.naver_api import NaverAdAPI
+    try:
+        key = os.getenv(f"{account}_API_KEY", "").strip()
+        sec = os.getenv(f"{account}_SECRET_KEY", "").strip()
+        cid = os.getenv(f"{account}_CUSTOMER_ID", "").strip()
+        if not (key and sec and cid):
+            return JSONResponse({"ok": False, "error": f"{account} 인증정보 없음"}, status_code=400)
+        api = NaverAdAPI(key, sec, cid)
+        api.update_bid(keyword_id, bid)
+        return JSONResponse({"ok": True, "keyword_id": keyword_id, "new_bid": bid})
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
+@app.post("/actions/naver/delete-keyword")
+def action_naver_delete_keyword(
+    keyword_id: str = Form(...),
+    account: str = Form("NAVER_AD"),
+    session: Optional[str] = Cookie(None),
+):
+    _require_action_auth(session)
+    from lib.naver_api import NaverAdAPI
+    try:
+        key = os.getenv(f"{account}_API_KEY", "").strip()
+        sec = os.getenv(f"{account}_SECRET_KEY", "").strip()
+        cid = os.getenv(f"{account}_CUSTOMER_ID", "").strip()
+        if not (key and sec and cid):
+            return JSONResponse({"ok": False, "error": f"{account} 인증정보 없음"}, status_code=400)
+        api = NaverAdAPI(key, sec, cid)
+        api.delete_keyword(keyword_id)
+        return JSONResponse({"ok": True, "keyword_id": keyword_id, "status": "deleted"})
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
 
 
 # ─────────────────────────────────────────────

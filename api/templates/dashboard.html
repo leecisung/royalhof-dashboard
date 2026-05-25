@@ -1,21 +1,7 @@
 {% extends "base.html" %}
 {% block title %}광고 통합 대시보드{% endblock %}
-{% block body %}
-<header>
-  <h1>📊 광고 통합 대시보드</h1>
-  <nav>
-    <a href="/?preset=today">오늘</a>
-    <a href="/?preset=7d">7일</a>
-    <a href="/?preset=14d">14일</a>
-    <a href="/?preset=30d">30일</a>
-    <a href="/?preset=mtd">이번달</a>
-    <a href="/?preset=lastmo">지난달</a>
-  </nav>
-  {% if has_password %}
-    <a href="/logout" class="logout">로그아웃</a>
-  {% endif %}
-</header>
-
+{% set active = 'home' %}
+{% block content %}
 <main>
 
   <!-- 컨트롤 -->

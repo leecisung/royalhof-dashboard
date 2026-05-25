@@ -236,6 +236,110 @@ def fetch_meta(since: date, until: date) -> list[dict]:
     return out
 
 
+def fetch_meta_ad_sets(since: date, until: date) -> list[dict]:
+    """Meta ad set 단위 집계 (기간 합계). [{ad_set_id, ad_set_name, campaign_*, imp/clk/spend/conv/reach/frequency, daily_budget, status}]"""
+    from lib.meta_api import MetaAdsAPI
+    from facebook_business.adobjects.adaccount import AdAccount
+    from facebook_business.adobjects.adsinsights import AdsInsights
+    try:
+        api = MetaAdsAPI.from_env()
+    except Exception as e:
+        logger.warning("[Meta] ad_set API init 실패: %s", e)
+        return []
+    acct = AdAccount(api.ad_account_id)
+    params = {
+        "time_range": {"since": str(since), "until": str(until)},
+        "level": "adset",
+        "limit": 500,
+    }
+    fields = [
+        AdsInsights.Field.adset_id, AdsInsights.Field.adset_name,
+        AdsInsights.Field.campaign_id, AdsInsights.Field.campaign_name,
+        AdsInsights.Field.impressions, AdsInsights.Field.clicks,
+        AdsInsights.Field.spend, AdsInsights.Field.ctr,
+        AdsInsights.Field.frequency, AdsInsights.Field.reach,
+        AdsInsights.Field.actions,
+    ]
+    try:
+        cursor = api._call(acct.get_insights, fields=fields, params=params)
+    except Exception as e:
+        logger.warning("[Meta] ad_set insights 실패: %s", e)
+        return []
+    out = []
+    for r in cursor:
+        d = dict(r)
+        conv = api._extract_conversions(d.get("actions", []))
+        spend = float(d.get("spend", 0) or 0)
+        out.append({
+            "ad_set_id": d.get("adset_id", ""),
+            "ad_set_name": d.get("adset_name", ""),
+            "campaign_id": d.get("campaign_id", ""),
+            "campaign_name": d.get("campaign_name", ""),
+            "impressions": int(d.get("impressions", 0) or 0),
+            "clicks": int(d.get("clicks", 0) or 0),
+            "spend": spend,
+            "conversions": conv,
+            "cpa": (spend / conv) if conv else 0.0,
+            "ctr": float(d.get("ctr", 0) or 0),
+            "frequency": float(d.get("frequency", 0) or 0),
+            "reach": int(d.get("reach", 0) or 0),
+        })
+    return out
+
+
+def fetch_meta_ads(since: date, until: date) -> list[dict]:
+    """Meta 광고(개별 소재) 단위 집계 (기간 합계). [{ad_id, ad_name, ad_set_id, campaign_*, imp/clk/spend/conv, ctr, frequency}]"""
+    from lib.meta_api import MetaAdsAPI
+    from facebook_business.adobjects.adaccount import AdAccount
+    from facebook_business.adobjects.adsinsights import AdsInsights
+    try:
+        api = MetaAdsAPI.from_env()
+    except Exception as e:
+        logger.warning("[Meta] ad API init 실패: %s", e)
+        return []
+    acct = AdAccount(api.ad_account_id)
+    params = {
+        "time_range": {"since": str(since), "until": str(until)},
+        "level": "ad",
+        "limit": 500,
+    }
+    fields = [
+        AdsInsights.Field.ad_id, AdsInsights.Field.ad_name,
+        AdsInsights.Field.adset_id, AdsInsights.Field.adset_name,
+        AdsInsights.Field.campaign_id, AdsInsights.Field.campaign_name,
+        AdsInsights.Field.impressions, AdsInsights.Field.clicks,
+        AdsInsights.Field.spend, AdsInsights.Field.ctr,
+        AdsInsights.Field.frequency,
+        AdsInsights.Field.actions,
+    ]
+    try:
+        cursor = api._call(acct.get_insights, fields=fields, params=params)
+    except Exception as e:
+        logger.warning("[Meta] ad insights 실패: %s", e)
+        return []
+    out = []
+    for r in cursor:
+        d = dict(r)
+        conv = api._extract_conversions(d.get("actions", []))
+        spend = float(d.get("spend", 0) or 0)
+        out.append({
+            "ad_id": d.get("ad_id", ""),
+            "ad_name": d.get("ad_name", ""),
+            "ad_set_id": d.get("adset_id", ""),
+            "ad_set_name": d.get("adset_name", ""),
+            "campaign_id": d.get("campaign_id", ""),
+            "campaign_name": d.get("campaign_name", ""),
+            "impressions": int(d.get("impressions", 0) or 0),
+            "clicks": int(d.get("clicks", 0) or 0),
+            "spend": spend,
+            "conversions": conv,
+            "cpa": (spend / conv) if conv else 0.0,
+            "ctr": float(d.get("ctr", 0) or 0),
+            "frequency": float(d.get("frequency", 0) or 0),
+        })
+    return out
+
+
 # ─────────────────────────────────────────────
 # GA4 (옵션)
 # ─────────────────────────────────────────────

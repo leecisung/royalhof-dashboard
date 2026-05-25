@@ -35,8 +35,44 @@
     color: #d1d5db; text-decoration: none; margin-right: 16px; font-size: 13px;
   }
   header nav a:hover { color: #fff; }
+  header nav a.active { color: #fff; border-bottom: 2px solid #fff; padding-bottom: 2px; }
+  header .links { display: flex; align-items: center; gap: 14px; }
+  header .links a { color: #9ca3af; font-size: 12px; text-decoration: none; }
+  header .links a:hover { color: #fff; }
+  header .ext { padding: 4px 10px; border: 1px solid #4b5563; border-radius: 4px; }
+  header .ext:hover { background: #374151; color: #fff; border-color: #6b7280; }
   header .logout { color: #9ca3af; font-size: 12px; text-decoration: none; }
   header .logout:hover { color: #fff; }
+  /* 액션 버튼 */
+  .btn-action {
+    display: inline-block; padding: 3px 8px; border-radius: 3px;
+    font-size: 11px; font-weight: 500; cursor: pointer;
+    border: 1px solid var(--line); background: #fff; color: var(--ink);
+    margin-right: 4px;
+  }
+  .btn-action:hover { background: #f3f4f6; }
+  .btn-action.danger { color: var(--neg); border-color: #fecaca; }
+  .btn-action.danger:hover { background: #fef2f2; }
+  /* 분류 배지 */
+  .badge { display: inline-block; padding: 2px 7px; border-radius: 3px; font-size: 11px; font-weight: 500; }
+  .badge.winner { background: #dcfce7; color: #166534; }
+  .badge.declining { background: #fef3c7; color: #92400e; }
+  .badge.learning { background: #dbeafe; color: #1e40af; }
+  .badge.kill { background: #fee2e2; color: #991b1b; }
+  .badge.hold { background: #f3f4f6; color: #374151; }
+  .badge.increase { background: #dcfce7; color: #166534; }
+  .badge.decrease { background: #fef3c7; color: #92400e; }
+  .badge.pause { background: #fee2e2; color: #991b1b; }
+  /* 인사이트 카드 */
+  .insights-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+  .insight-block { padding: 10px 12px; border-radius: 6px; font-size: 13px; }
+  .insight-block.win { background: #ecfdf5; border: 1px solid #bbf7d0; }
+  .insight-block.fix { background: #fffbeb; border: 1px solid #fde68a; }
+  .insight-block.warn { background: #fef2f2; border: 1px solid #fecaca; }
+  .insight-block h3 { margin: 0 0 6px; font-size: 12px; }
+  .insight-block ul { margin: 0; padding-left: 14px; }
+  .insight-block li { margin: 3px 0; }
+  @media (max-width: 900px) { .insights-grid { grid-template-columns: 1fr; } }
 
   main { padding: 20px 24px; max-width: 1400px; margin: 0 auto; }
 
@@ -131,6 +167,24 @@
 </style>
 </head>
 <body>
-{% block body %}{% endblock %}
+{% block body %}
+{% if not hide_header %}
+<header>
+  <h1>📊 광고 통합 대시보드</h1>
+  <nav>
+    <a href="/" class="{% if active=='home' %}active{% endif %}">종합</a>
+    <a href="/meta" class="{% if active=='meta' %}active{% endif %}">Meta 상세</a>
+    <a href="/naver" class="{% if active=='naver' %}active{% endif %}">Naver 상세</a>
+  </nav>
+  <div class="links">
+    <a href="https://bsfnb-dashboard.vercel.app/" target="_blank" rel="noopener" class="ext">↗ bsfnb 매출</a>
+    {% if has_password %}
+      <a href="/logout" class="logout">로그아웃</a>
+    {% endif %}
+  </div>
+</header>
+{% endif %}
+{% block content %}{% endblock %}
+{% endblock %}
 </body>
 </html>
