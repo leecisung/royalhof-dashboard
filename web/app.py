@@ -382,10 +382,20 @@ def naver_detail(
     prev_prev_until = prev_since - timedelta(days=1)
     prev_prev_since = prev_prev_until - timedelta(days=days - 1)
 
-    # Vercel 함수 시간 한계로 현재 기간만 fetch. prev/prev_prev는 / 페이지의 통합 캐시 활용 시도.
-    cur = fetch_naver(since, until)
-    prev = []
-    prev_prev = []
+    # fetch_unified의 캐시 활용 (/ 페이지가 1시간 내에 방문돼 있으면 즉시 hit)
+    cur_data = fetch_unified(since, until, force_refresh=False)
+    cur = cur_data.get("naver", [])
+
+    # prev/prev_prev는 캐시 hit 시에만 사용. 캐시 미스면 빈 리스트.
+    def _cached_or_empty(s, u):
+        try:
+            from lib.dashboard_data import _cache_get, _key
+            cached = _cache_get(_key("unified_v1", str(s), str(u)))
+            return cached.get("naver", []) if cached else []
+        except Exception:
+            return []
+    prev = _cached_or_empty(prev_since, prev_until)
+    prev_prev = _cached_or_empty(prev_prev_since, prev_prev_until)
 
     # 캠페인 단위 집계 (현재)
     camp_map = {}
