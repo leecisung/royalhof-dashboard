@@ -25,6 +25,10 @@
         <input type="date" name="end" value="{{ until }}">
       </label>
       <button type="submit">적용</button>
+      <a href="/meta/export.csv?preset={{ preset }}&start={{ since }}&end={{ until }}"
+         style="text-decoration:none">
+        <button type="button" class="outline">📥 CSV 다운로드</button>
+      </a>
       <span style="margin-left:auto;font-size:12px;color:var(--muted)">
         🦋 Meta 광고 ({{ since }} ~ {{ until }} · {{ days }}일) — 직전기간 비교
       </span>

@@ -704,6 +704,298 @@ def action_naver_delete_keyword(
 
 
 # ─────────────────────────────────────────────
+# CSV export — /meta /naver 결과보고서 다운로드
+# ─────────────────────────────────────────────
+
+import csv as _csv
+import io as _io
+
+
+def _csv_response(rows: list, filename: str) -> Response:
+    """utf-8-sig BOM 입혀 Excel에서 한글 그대로 열리도록."""
+    buf = _io.StringIO()
+    buf.write("﻿")  # BOM
+    w = _csv.writer(buf)
+    for row in rows:
+        w.writerow(row)
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.get("/meta/export.csv")
+def meta_export(
+    preset: str = "7d",
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    session: Optional[str] = Cookie(None),
+):
+    if not _check_auth(session):
+        return RedirectResponse("/login", status_code=303)
+
+    since, until = _parse_period(preset, start, end)
+    days = (until - since).days + 1
+    prev_until = since - timedelta(days=1)
+    prev_since = prev_until - timedelta(days=days - 1)
+
+    try:
+        ad_sets = fetch_meta_ad_sets(since, until)
+        ads = fetch_meta_ads(since, until)
+        prev_ad_sets = fetch_meta_ad_sets(prev_since, prev_until)
+    except Exception as e:
+        logger.warning("[/meta/export] fetch 실패: %s", e)
+        ad_sets, ads, prev_ad_sets = [], [], []
+    try:
+        placements = fetch_meta_placements(since, until)
+    except Exception as e:
+        logger.warning("[/meta/export] placement 실패: %s", e)
+        placements = []
+    placement_analysis = analyze_meta_placements(placements)
+    by_adset_placement = placement_analysis.get("by_adset", {})
+
+    # 캠페인 합산
+    camp_map = {}
+    for a in ad_sets:
+        cid = a["campaign_id"]
+        if cid not in camp_map:
+            camp_map[cid] = {"campaign_id": cid, "campaign_name": a["campaign_name"],
+                             "impressions": 0, "clicks": 0, "spend": 0.0,
+                             "conversions": 0, "reach": 0}
+        c = camp_map[cid]
+        c["impressions"] += a["impressions"]; c["clicks"] += a["clicks"]
+        c["spend"] += a["spend"]; c["conversions"] += a["conversions"]; c["reach"] += a["reach"]
+    campaigns = []
+    for c in camp_map.values():
+        c["ctr"] = (c["clicks"] / c["impressions"] * 100) if c["impressions"] else 0.0
+        c["cpc"] = int(c["spend"] / c["clicks"]) if c["clicks"] else 0
+        c["cpa"] = int(c["spend"] / c["conversions"]) if c["conversions"] else 0
+        c["spend"] = int(c["spend"])
+        dec, rea = classify_budget_decision(c["spend"], c["conversions"], c["cpa"])
+        c["budget_decision"] = dec; c["budget_reason"] = rea
+        campaigns.append(c)
+    campaigns.sort(key=lambda x: -x["spend"])
+
+    # Ad set 분류
+    for a in ad_sets:
+        a["spend_int"] = int(a["spend"]); a["cpa_int"] = int(a["cpa"])
+        dec, rea = classify_budget_decision(a["spend"], a["conversions"], a["cpa"])
+        a["budget_decision"] = dec; a["budget_reason"] = rea
+        an_pct = by_adset_placement.get(a["ad_set_id"], {}).get("an_pct", 0.0)
+        a["an_pct"] = an_pct
+        a["diagnosis"] = diagnose_meta_ad_set(a, an_pct=an_pct)
+    ad_sets.sort(key=lambda x: -x["spend"])
+
+    # Ad 분류
+    for a in ads:
+        a["spend_int"] = int(a["spend"]); a["cpa_int"] = int(a["cpa"])
+        st, rea = classify_creative_status(ctr=a["ctr"], cpa=a["cpa"],
+                                           conv=a["conversions"], spend=a["spend"])
+        a["creative_status"] = st; a["creative_reason"] = rea
+    ads.sort(key=lambda x: -x["spend"])
+
+    cur_kpi = _kpi(ad_sets)
+    prev_kpi = _kpi(prev_ad_sets) if prev_ad_sets else None
+
+    rows = []
+    rows.append(["Meta 광고 결과보고서"])
+    rows.append([f"기간: {since.isoformat()} ~ {until.isoformat()} ({days}일)"])
+    rows.append([f"직전기간: {prev_since.isoformat()} ~ {prev_until.isoformat()}"])
+    rows.append([])
+
+    # KPI 요약
+    rows.append(["[KPI 요약]"])
+    rows.append(["지표", "현재", "직전기간"])
+    metrics = [("노출", "impressions"), ("클릭", "clicks"), ("지출(원)", "spend"),
+               ("전환(리드)", "conversions"), ("CTR(%)", "ctr"), ("CPC(원)", "cpc"),
+               ("CPA(원)", "cpa"), ("CPM(원)", "cpm")]
+    for label, key in metrics:
+        cur_v = cur_kpi.get(key, 0)
+        prev_v = prev_kpi.get(key, 0) if prev_kpi else ""
+        if key == "ctr":
+            cur_v = f"{cur_v:.2f}"; prev_v = f"{prev_v:.2f}" if prev_kpi else ""
+        rows.append([label, cur_v, prev_v])
+    rows.append([])
+
+    # 캠페인
+    rows.append(["[캠페인]"])
+    rows.append(["캠페인명", "노출", "클릭", "지출(원)", "전환", "CTR(%)", "CPC(원)",
+                 "CPA(원)", "예산 권고", "사유"])
+    for c in campaigns:
+        rows.append([c["campaign_name"], c["impressions"], c["clicks"], c["spend"],
+                     c["conversions"], f"{c['ctr']:.2f}", c["cpc"], c["cpa"],
+                     c.get("budget_decision", ""), c.get("budget_reason", "")])
+    rows.append([])
+
+    # Ad set + 진단
+    rows.append(["[Ad set 진단]"])
+    rows.append(["Ad set명", "캠페인", "노출", "클릭", "지출(원)", "전환", "CTR(%)",
+                 "CPC(원)", "CPA(원)", "Frequency", "AN%", "Verdict", "Verdict 사유",
+                 "예산 권고", "사유"])
+    for a in ad_sets:
+        diag = a.get("diagnosis", {})
+        rows.append([a["name"], a.get("campaign_name", ""), a["impressions"], a["clicks"],
+                     a["spend_int"], a["conversions"], f"{a['ctr']:.2f}",
+                     int(a["cpc"]), a["cpa_int"], f"{a['frequency']:.2f}",
+                     f"{a['an_pct']:.1f}", diag.get("verdict", ""), diag.get("reason", ""),
+                     a.get("budget_decision", ""), a.get("budget_reason", "")])
+    rows.append([])
+
+    # Ad (소재)
+    rows.append(["[광고 소재]"])
+    rows.append(["광고명", "Ad set", "노출", "클릭", "지출(원)", "전환", "CTR(%)",
+                 "CPC(원)", "CPA(원)", "소재 평가", "사유"])
+    for a in ads:
+        rows.append([a["name"], a.get("ad_set_name", ""), a["impressions"], a["clicks"],
+                     a["spend_int"], a["conversions"], f"{a['ctr']:.2f}",
+                     int(a["cpc"]), a["cpa_int"],
+                     a.get("creative_status", ""), a.get("creative_reason", "")])
+    rows.append([])
+
+    # Placement
+    rows.append(["[Placement 분석]"])
+    by_placement = placement_analysis.get("by_placement", {})
+    if by_placement:
+        rows.append(["Placement", "노출", "클릭", "지출(원)", "전환", "CTR(%)", "CPC(원)"])
+        for pname, pdata in sorted(by_placement.items(), key=lambda x: -x[1].get("spend", 0)):
+            rows.append([pname, pdata.get("impressions", 0), pdata.get("clicks", 0),
+                         int(pdata.get("spend", 0)), pdata.get("conversions", 0),
+                         f"{pdata.get('ctr', 0):.2f}", int(pdata.get("cpc", 0))])
+    rows.append([])
+
+    fname = f"meta_report_{since.isoformat()}_{until.isoformat()}.csv"
+    return _csv_response(rows, fname)
+
+
+@app.get("/naver/export.csv")
+def naver_export(
+    preset: str = "7d",
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    session: Optional[str] = Cookie(None),
+):
+    if not _check_auth(session):
+        return RedirectResponse("/login", status_code=303)
+
+    since, until = _parse_period(preset, start, end)
+    days = (until - since).days + 1
+    prev_until = since - timedelta(days=1)
+    prev_since = prev_until - timedelta(days=days - 1)
+    prev_prev_until = prev_since - timedelta(days=1)
+    prev_prev_since = prev_prev_until - timedelta(days=days - 1)
+
+    snapshot = _load_snapshot()
+    if snapshot:
+        all_naver = snapshot.get("naver", [])
+        cur = _filter_by_period(all_naver, since, until)
+        prev = _filter_by_period(all_naver, prev_since, prev_until)
+        prev_prev = _filter_by_period(all_naver, prev_prev_since, prev_prev_until)
+    else:
+        try:
+            cur = fetch_naver(since, until)
+        except Exception:
+            cur = []
+        prev = []; prev_prev = []
+
+    def _kpi_filter(rows, account=None, exclude_campaigns=None):
+        sel = rows
+        if account:
+            sel = [r for r in sel if r.get("account") == account]
+        if exclude_campaigns:
+            sel = [r for r in sel if not any(x in (r.get("campaign_name") or "") for x in exclude_campaigns)]
+        return _kpi(sel)
+
+    rows = []
+    rows.append(["Naver 광고 결과보고서"])
+    rows.append([f"기간: {since.isoformat()} ~ {until.isoformat()} ({days}일)"])
+    rows.append([f"전주: {prev_since.isoformat()} ~ {prev_until.isoformat()}"])
+    rows.append([f"전전주: {prev_prev_since.isoformat()} ~ {prev_prev_until.isoformat()}"])
+    rows.append([])
+
+    # 3주 KPI 추이
+    kc, kp, kpp = _kpi(cur), _kpi(prev), _kpi(prev_prev)
+    rows.append(["[3주 KPI 추이]"])
+    rows.append(["지표", "전전주", "전주", "이번주"])
+    for label, key in [("노출", "impressions"), ("클릭", "clicks"), ("지출(원)", "spend"),
+                       ("전환", "conversions"), ("CTR(%)", "ctr"), ("CPC(원)", "cpc")]:
+        if key == "ctr":
+            rows.append([label, f"{kpp[key]:.2f}", f"{kp[key]:.2f}", f"{kc[key]:.2f}"])
+        else:
+            rows.append([label, kpp[key], kp[key], kc[key]])
+    rows.append([])
+
+    # 계정별 (3계정 × 3주)
+    rows.append(["[계정별 KPI]"])
+    rows.append(["계정", "기간", "노출", "클릭", "지출(원)", "CTR(%)", "CPC(원)"])
+    for label in ["로얄호프치킨 가맹광고 (파워링크)", "버거리 (보승에프앤비)", "구 파워링크 (미사용)"]:
+        for period_label, src in [("전전주", prev_prev), ("전주", prev), ("이번주", cur)]:
+            k = _kpi_filter(src, account=label)
+            rows.append([label, period_label, k["impressions"], k["clicks"], k["spend"],
+                         f"{k['ctr']:.2f}", k["cpc"]])
+        if "로얄호프" in label:
+            for period_label, src in [("전전주(노출용제외)", prev_prev),
+                                       ("전주(노출용제외)", prev),
+                                       ("이번주(노출용제외)", cur)]:
+                k = _kpi_filter(src, account=label, exclude_campaigns=["노출용"])
+                rows.append([label, period_label, k["impressions"], k["clicks"], k["spend"],
+                             f"{k['ctr']:.2f}", k["cpc"]])
+    rows.append([])
+
+    # 캠페인 단위
+    camp_map = {}
+    for r in cur:
+        cid = r["campaign_id"]
+        if cid not in camp_map:
+            camp_map[cid] = {"campaign_name": r["campaign_name"], "account": r["account"],
+                             "brand": r["brand"], "impressions": 0, "clicks": 0, "spend": 0}
+        camp_map[cid]["impressions"] += r["impressions"]
+        camp_map[cid]["clicks"] += r["clicks"]
+        camp_map[cid]["spend"] += r["spend"]
+    campaigns = []
+    for c in camp_map.values():
+        c["ctr"] = (c["clicks"] / c["impressions"] * 100) if c["impressions"] else 0.0
+        c["cpc"] = int(c["spend"] / c["clicks"]) if c["clicks"] else 0
+        campaigns.append(c)
+    campaigns.sort(key=lambda x: -x["spend"])
+
+    rows.append(["[캠페인]"])
+    rows.append(["계정", "캠페인명", "노출", "클릭", "지출(원)", "CTR(%)", "CPC(원)"])
+    for c in campaigns:
+        rows.append([c["account"], c["campaign_name"], c["impressions"], c["clicks"],
+                     c["spend"], f"{c['ctr']:.2f}", c["cpc"]])
+    rows.append([])
+
+    # 고비용 키워드 권고
+    expensive_keywords = []
+    if snapshot:
+        all_kws = snapshot.get("naver_keywords", []) or []
+        for kw in all_kws:
+            action = classify_keyword_action(kw.get("cpc", 0), kw.get("impressions", 0),
+                                              kw.get("clicks", 0))
+            if action:
+                ac_label, ac_reason = action
+                expensive_keywords.append({**kw, "action_label": ac_label,
+                                            "action_reason": ac_reason})
+        expensive_keywords.sort(key=lambda k: -k.get("cost", 0))
+
+    if expensive_keywords:
+        rows.append(["[고비용 키워드 권고]"])
+        rows.append(["키워드", "계정", "캠페인", "노출", "클릭", "비용(원)", "CPC(원)",
+                     "권고", "사유"])
+        for kw in expensive_keywords:
+            rows.append([kw.get("keyword", ""), kw.get("account", ""),
+                         kw.get("campaign_name", ""), kw.get("impressions", 0),
+                         kw.get("clicks", 0), int(kw.get("cost", 0)),
+                         int(kw.get("cpc", 0)), kw.get("action_label", ""),
+                         kw.get("action_reason", "")])
+        rows.append([])
+
+    fname = f"naver_report_{since.isoformat()}_{until.isoformat()}.csv"
+    return _csv_response(rows, fname)
+
+
+# ─────────────────────────────────────────────
 # 헬스체크 (Vercel용)
 # ─────────────────────────────────────────────
 
