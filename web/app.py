@@ -835,10 +835,11 @@ def meta_export(
                  "예산 권고", "사유"])
     for a in ad_sets:
         diag = a.get("diagnosis", {})
-        rows.append([a["name"], a.get("campaign_name", ""), a["impressions"], a["clicks"],
-                     a["spend_int"], a["conversions"], f"{a['ctr']:.2f}",
-                     int(a["cpc"]), a["cpa_int"], f"{a['frequency']:.2f}",
-                     f"{a['an_pct']:.1f}", diag.get("verdict", ""), diag.get("reason", ""),
+        cpc_a = int(a["spend"] / a["clicks"]) if a.get("clicks") else 0
+        rows.append([a.get("ad_set_name", ""), a.get("campaign_name", ""),
+                     a["impressions"], a["clicks"], a["spend_int"], a["conversions"],
+                     f"{a['ctr']:.2f}", cpc_a, a["cpa_int"], f"{a['frequency']:.2f}",
+                     f"{a['an_pct']*100:.1f}", diag.get("verdict", ""), diag.get("reason", ""),
                      a.get("budget_decision", ""), a.get("budget_reason", "")])
     rows.append([])
 
@@ -847,21 +848,26 @@ def meta_export(
     rows.append(["광고명", "Ad set", "노출", "클릭", "지출(원)", "전환", "CTR(%)",
                  "CPC(원)", "CPA(원)", "소재 평가", "사유"])
     for a in ads:
-        rows.append([a["name"], a.get("ad_set_name", ""), a["impressions"], a["clicks"],
-                     a["spend_int"], a["conversions"], f"{a['ctr']:.2f}",
-                     int(a["cpc"]), a["cpa_int"],
+        cpc_a = int(a["spend"] / a["clicks"]) if a.get("clicks") else 0
+        rows.append([a.get("ad_name", ""), a.get("ad_set_name", ""),
+                     a["impressions"], a["clicks"], a["spend_int"], a["conversions"],
+                     f"{a['ctr']:.2f}", cpc_a, a["cpa_int"],
                      a.get("creative_status", ""), a.get("creative_reason", "")])
     rows.append([])
 
     # Placement
     rows.append(["[Placement 분석]"])
-    by_placement = placement_analysis.get("by_placement", {})
-    if by_placement:
-        rows.append(["Placement", "노출", "클릭", "지출(원)", "전환", "CTR(%)", "CPC(원)"])
-        for pname, pdata in sorted(by_placement.items(), key=lambda x: -x[1].get("spend", 0)):
-            rows.append([pname, pdata.get("impressions", 0), pdata.get("clicks", 0),
-                         int(pdata.get("spend", 0)), pdata.get("conversions", 0),
-                         f"{pdata.get('ctr', 0):.2f}", int(pdata.get("cpc", 0))])
+    by_platform = placement_analysis.get("by_platform", []) or []
+    if by_platform:
+        rows.append(["Placement", "노출", "클릭", "지출(원)", "전환", "CTR(%)", "CPC(원)", "비중(%)"])
+        for p in by_platform:
+            imp = p.get("impressions", 0); clk = p.get("clicks", 0)
+            spend = p.get("spend", 0)
+            cpc_p = int(spend / clk) if clk else 0
+            share = p.get("share", 0) * 100
+            rows.append([p.get("publisher_platform", ""), imp, clk, int(spend),
+                         p.get("conversions", 0), f"{p.get('ctr', 0):.2f}", cpc_p,
+                         f"{share:.1f}"])
     rows.append([])
 
     fname = f"meta_report_{since.isoformat()}_{until.isoformat()}.csv"
