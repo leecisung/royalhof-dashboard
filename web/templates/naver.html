@@ -14,7 +14,14 @@
           <option value="30d" {% if preset=='30d' %}selected{% endif %}>최근 30일</option>
           <option value="mtd" {% if preset=='mtd' %}selected{% endif %}>이번 달</option>
           <option value="lastmo" {% if preset=='lastmo' %}selected{% endif %}>지난 달</option>
+          <option value="custom" {% if preset=='custom' %}selected{% endif %}>직접 지정</option>
         </select>
+      </label>
+      <label>시작
+        <input type="date" name="start" value="{{ since }}">
+      </label>
+      <label>종료
+        <input type="date" name="end" value="{{ until }}">
       </label>
       <button type="submit">적용</button>
       <span style="margin-left:auto;font-size:12px;color:var(--muted)">
