@@ -186,5 +186,18 @@
 {% endif %}
 {% block content %}{% endblock %}
 {% endblock %}
+<script>
+  // 날짜 input을 손으로 바꾸면 preset이 자동으로 'custom'으로 전환
+  document.querySelectorAll('.controls input[type=date]').forEach(function(inp) {
+    inp.addEventListener('change', function() {
+      var form = inp.closest('form');
+      if (!form) return;
+      var sel = form.querySelector('select[name=preset]');
+      if (!sel) return;
+      var hasCustom = Array.prototype.some.call(sel.options, function(o){ return o.value === 'custom'; });
+      if (hasCustom) sel.value = 'custom';
+    });
+  });
+</script>
 </body>
 </html>
