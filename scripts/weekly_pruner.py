@@ -27,6 +27,13 @@ import argparse
 from datetime import date, timedelta
 from pathlib import Path
 
+# Windows 콘솔(cp949)에서 em-dash·이모지 출력 깨짐 방지
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
+except AttributeError:
+    pass
+
 from dotenv import load_dotenv
 
 # ──────────────────────────────────────────────
