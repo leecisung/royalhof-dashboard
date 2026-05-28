@@ -246,12 +246,12 @@ class NaverAdAPI:
             logger.error("[API] 키워드 %s 삭제 실패: %s", keyword_id, e)
             return False
 
-    def lock_keyword(self, keyword_id: str) -> dict:
-        """키워드 OFF (userLock=true)."""
+    def lock_keyword(self, keyword_id: str, lock: bool = True) -> dict:
+        """키워드 OFF/ON. Naver PUT은 fields 쿼리 파라미터로 수정 대상 필드 명시 필수."""
         path = f"/ncc/keywords/{keyword_id}"
-        body = {"userLock": True}
-        result = self._request("PUT", path, body=body)
-        logger.info("[API] 키워드 %s OFF 처리", keyword_id)
+        body = {"nccKeywordId": keyword_id, "userLock": lock}
+        result = self._request("PUT", path, params={"fields": "userLock"}, body=body)
+        logger.info("[API] 키워드 %s %s 처리", keyword_id, "OFF" if lock else "ON")
         return result
 
     # ──────────────────────────────────────────────

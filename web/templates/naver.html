@@ -90,6 +90,14 @@
   {% for acc in accounts_summary %}
   <div class="card">
     <h2>{{ acc.label }} — 3주 추이</h2>
+    {% if "버거리" in acc.label %}
+    <div style="background:#fff7ed;border:1px solid #fdba74;border-radius:8px;padding:10px 12px;margin:0 0 12px;font-size:12.5px;line-height:1.65;color:#7c2d12">
+      📢 <strong>2026-05-28부터 대행사 '인디엠' 위탁운영 시작</strong> (보승에프앤비가 같은 네이버 계정 공유).<br/>
+      · 대행사 캠페인: <code>#01.파워링크</code>(가맹·창업), <code>#00.상호명</code>(브랜드) — 우리 미관여<br/>
+      · 우리 유지: <strong>파워컨텐츠</strong>(가맹 콘텐츠, 슬롯 다름) + 우리 고유 키워드<br/>
+      · 2026-05-29 우리 캠페인의 대행사 겹침 키워드 73개 OFF — 브랜드·가맹 일원화 완료
+    </div>
+    {% endif %}
     {% if acc.kpi_cur_noexposure is defined %}
     <p style="font-size:12px;color:var(--muted);margin:0 0 8px">
       ★ 로얄호프치킨은 '노출용' 캠페인이 노출의 99%+ 차지해 효율 지표를 왜곡 — '노출용 제외' 버전이 실질 운영 성과.
