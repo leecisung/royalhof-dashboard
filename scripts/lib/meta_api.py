@@ -322,8 +322,27 @@ class MetaAdsAPI:
             "reach":       int(r.get("reach", 0) or 0),
         }
 
+    # Meta 리드폼(인스턴트 양식) 리드는 픽셀 COMPLETE_REGISTRATION 이름과 다르게 잡힘.
+    #   - 'lead' : Meta가 픽셀+리드폼+메시지 리드를 합산·중복제거한 대표 지표
+    #   - 'onsite_conversion.lead_grouped' : 인스턴트 양식 리드(그룹)
+    #   - 'offsite_complete_registration_add_meta_leads' : 리드 광고의 가입완료
+    # (2026-06: (ON)버거리_잠재고객이 리드폼으로 전환 발생 → pixel_event 필터에서 누락되어
+    #  전환 0으로 오집계되던 버그 수정.)
+    LEAD_ACTION_TYPES = (
+        "lead",
+        "onsite_conversion.lead_grouped",
+        "offsite_complete_registration_add_meta_leads",
+    )
+
     def _extract_conversions(self, actions: list) -> int:
-        """actions 배열에서 pixel_event에 해당하는 전환 수 추출."""
+        """actions 배열에서 전환 수 추출.
+
+        pixel_event(.env META_PIXEL_EVENT) 기반 후보 + Meta 리드폼 액션 타입을
+        함께 인식한다. 동일 리드가 여러 버킷(lead / lead_grouped /
+        offsite_*_add_meta_leads)으로 중복 보고되므로 합산하지 않고 '최댓값'을 취해
+        실제 리드 수를 구한다. Meta의 'lead'는 그 자체가 모든 리드 출처의 합이라
+        max로 집계해도 누락되지 않는다.
+        """
         if not actions:
             return 0
         target_lower = self.pixel_event.lower()
@@ -332,14 +351,16 @@ class MetaAdsAPI:
             f"offsite_conversion.fb_pixel_{target_lower}",
             f"onsite_conversion.{target_lower}",
         }
+        candidates.update(self.LEAD_ACTION_TYPES)
+        best = 0
         for action in actions:
             atype = (action.get("action_type") or "").lower()
             if atype in candidates:
                 try:
-                    return int(float(action.get("value", 0)))
+                    best = max(best, int(float(action.get("value", 0))))
                 except (TypeError, ValueError):
-                    return 0
-        return 0
+                    continue
+        return best
 
     # ──────────────────────────────────────────────
     # 변경 (Write — 모두 보호 검사 통과 필요)
