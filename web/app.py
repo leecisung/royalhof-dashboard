@@ -1002,6 +1002,214 @@ def naver_export(
 
 
 # ─────────────────────────────────────────────
+# /daily — 일일 분석 페이지 (어제 + 최근 N일 일별)
+# ─────────────────────────────────────────────
+
+def _classify_operator(channel: str, campaign: str) -> str:
+    """캠페인 이름으로 운영주체 판정."""
+    n = (campaign or "").strip()
+    # 이엠넷 (로얄 Naver 신규)
+    if n.startswith(("A.", "B.", "C.", "D.")) and "고비용" not in n[:3]:
+        # 위험: 본사 "로얄 고비용 (M)" 도 시작이 다름 — 정확히 이엠넷 패턴은 A./B./C./D.
+        pass
+    if any(n.startswith(p) for p in ("A.고비용", "B.중세부", "C.지역", "D.지역")):
+        return "이엠넷"
+    # 인디엠 (버거리 Naver) — # 으로 시작
+    if n.startswith(("#00", "#01")):
+        return "인디엠"
+    # 인디엠 (Meta 신규) — (ON) 으로 시작
+    if "(ON)" in n[:5]:
+        return "인디엠"
+    return "본사"
+
+
+@app.get("/daily", response_class=HTMLResponse)
+def daily_page(
+    request: Request,
+    preset: str = "7d",
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    refresh: int = 0,
+    session: Optional[str] = Cookie(None),
+):
+    if not _check_auth(session):
+        return RedirectResponse("/login", status_code=303)
+
+    since, until = _parse_period(preset, start, end)
+
+    # 스냅샷 우선 (Naver / Meta)
+    snapshot = _load_snapshot()
+    if snapshot and not refresh:
+        all_naver = snapshot.get("naver", [])
+        all_meta = snapshot.get("meta", [])
+        naver_rows = _filter_by_period(all_naver, since, until)
+        meta_rows = _filter_by_period(all_meta, since, until)
+        from_cache = True
+        fetched_at = snapshot.get("generated_at", "")
+    else:
+        data = fetch_unified(since, until, force_refresh=bool(refresh))
+        naver_rows = data.get("naver", [])
+        meta_rows = data.get("meta", [])
+        from_cache = False
+        fetched_at = data.get("fetched_at", "")
+
+    all_rows = naver_rows + meta_rows
+    days = (until - since).days + 1
+
+    # 일별 채널 합산
+    by_date: dict[str, dict] = {}
+    for r in all_rows:
+        d = r.get("date", "")
+        if not d:
+            continue
+        slot = by_date.setdefault(d, {
+            "date": d, "naver_spend": 0, "meta_spend": 0, "total_spend": 0,
+            "naver_clk": 0, "meta_clk": 0, "naver_imp": 0, "meta_imp": 0,
+        })
+        spend = int(r.get("spend", 0) or 0)
+        clk = int(r.get("clicks", 0) or 0)
+        imp = int(r.get("impressions", 0) or 0)
+        ch = r.get("channel", "")
+        if ch == "Naver":
+            slot["naver_spend"] += spend
+            slot["naver_clk"] += clk
+            slot["naver_imp"] += imp
+        elif ch == "Meta":
+            slot["meta_spend"] += spend
+            slot["meta_clk"] += clk
+            slot["meta_imp"] += imp
+        slot["total_spend"] = slot["naver_spend"] + slot["meta_spend"]
+
+    daily_list = sorted(by_date.values(), key=lambda x: x["date"], reverse=True)
+
+    # GA4 일별 (직접 호출 — snapshot에 없음)
+    ga4_daily_map: dict[str, dict] = {}
+    ga4_form_by_source: list[dict] = []
+    ga4_error = None
+    try:
+        from lib.ga4_api import GA4API
+        ga4 = GA4API.from_env()
+        # 기본 daily
+        for r in ga4.fetch_daily_summary(since, until):
+            ga4_daily_map[r["date"]] = {"sessions": r["sessions"], "users": r["users"], "pv": r["pageviews"]}
+        # form_submit 일별
+        for r in ga4.fetch_daily_form_submit(since, until):
+            slot = ga4_daily_map.setdefault(r["date"], {"sessions": 0, "users": 0, "pv": 0})
+            slot["form_submit"] = r.get("form_submit", 0)
+            slot["form_start"] = r.get("form_start", 0)
+        # form_submit 출처별 (기간 전체)
+        ga4_form_by_source = ga4.fetch_form_submit_by_source(since, until)
+    except Exception as e:
+        ga4_error = str(e)
+        logger.warning("[GA4] daily fetch 실패: %s", e)
+
+    # 일별 통합 (광고비 + GA4 합치기)
+    for slot in daily_list:
+        d = slot["date"]
+        ga = ga4_daily_map.get(d, {})
+        slot["sessions"] = ga.get("sessions", 0)
+        slot["form_submit"] = ga.get("form_submit", 0)
+        slot["form_start"] = ga.get("form_start", 0)
+        slot["cpl"] = int(slot["total_spend"] / slot["form_submit"]) if slot.get("form_submit") else 0
+
+    # 기간 합계
+    sum_naver = sum(s["naver_spend"] for s in daily_list)
+    sum_meta = sum(s["meta_spend"] for s in daily_list)
+    sum_total = sum_naver + sum_meta
+    sum_sessions = sum(s.get("sessions", 0) for s in daily_list)
+    sum_form_submit = sum(s.get("form_submit", 0) for s in daily_list)
+    sum_form_start = sum(s.get("form_start", 0) for s in daily_list)
+    avg_cpl = int(sum_total / sum_form_submit) if sum_form_submit else 0
+    form_conv_rate = (sum_form_submit / sum_form_start * 100) if sum_form_start else 0
+    form_entry_rate = (sum_form_start / sum_sessions * 100) if sum_sessions else 0
+
+    # 어제 데이터
+    yesterday = (date.today() - timedelta(days=1)).isoformat()
+    yesterday_slot = next((s for s in daily_list if s["date"] == yesterday), None)
+
+    # 운영주체별 (기간 합산)
+    operator_map: dict[str, dict] = {}
+    campaign_summary: dict[tuple, dict] = {}
+    for r in all_rows:
+        ch = r.get("channel", "")
+        camp = r.get("campaign_name", "")
+        op = _classify_operator(ch, camp)
+        slot = operator_map.setdefault(op, {"operator": op, "spend": 0, "imp": 0, "clk": 0, "channel_set": set()})
+        slot["spend"] += int(r.get("spend", 0) or 0)
+        slot["imp"] += int(r.get("impressions", 0) or 0)
+        slot["clk"] += int(r.get("clicks", 0) or 0)
+        slot["channel_set"].add(ch)
+        # 캠페인별 합산
+        key = (ch, r.get("account", ""), camp, op)
+        ck = campaign_summary.setdefault(key, {
+            "channel": ch, "account": r.get("account", ""), "campaign": camp,
+            "operator": op, "spend": 0, "imp": 0, "clk": 0,
+        })
+        ck["spend"] += int(r.get("spend", 0) or 0)
+        ck["imp"] += int(r.get("impressions", 0) or 0)
+        ck["clk"] += int(r.get("clicks", 0) or 0)
+    operators = sorted(operator_map.values(), key=lambda x: -x["spend"])
+    for op in operators:
+        op["channels"] = " · ".join(sorted(op.pop("channel_set")))
+        op["cpc"] = int(op["spend"] / op["clk"]) if op["clk"] else 0
+        op["share"] = (op["spend"] / sum_total * 100) if sum_total else 0
+
+    # 캠페인 Top 12 (기간 합산)
+    campaigns = sorted(campaign_summary.values(), key=lambda x: -x["spend"])
+    for c in campaigns:
+        c["cpc"] = int(c["spend"] / c["clk"]) if c["clk"] else 0
+    top_campaigns = campaigns[:12]
+
+    # form_submit 채널 그룹화
+    grp = {"organic": 0, "direct_unknown": 0, "paid": 0, "referral": 0}
+    for f in ga4_form_by_source:
+        m = (f.get("medium") or "").lower()
+        s = (f.get("source") or "").lower()
+        c = f.get("form_submit", 0)
+        if "organic" in m:
+            grp["organic"] += c
+        elif s in ("(direct)", "(not set)") or m in ("(none)", "(not set)"):
+            grp["direct_unknown"] += c
+        elif m in ("cpc", "sa", "ppc", "paid", "paid_social", "conversion"):
+            grp["paid"] += c
+        elif "referral" in m or "social" in m:
+            grp["referral"] += c
+        else:
+            grp["direct_unknown"] += c
+
+    return TEMPLATES.TemplateResponse(
+        request,
+        "daily.html",
+        {
+            "preset": preset,
+            "since": since.isoformat(),
+            "until": until.isoformat(),
+            "days": days,
+            "daily_list": daily_list,
+            "operators": operators,
+            "top_campaigns": top_campaigns,
+            "ga4_form_by_source": ga4_form_by_source[:15],
+            "ga4_form_groups": grp,
+            "ga4_error": ga4_error,
+            "sum_naver": sum_naver,
+            "sum_meta": sum_meta,
+            "sum_total": sum_total,
+            "sum_sessions": sum_sessions,
+            "sum_form_submit": sum_form_submit,
+            "sum_form_start": sum_form_start,
+            "avg_cpl": avg_cpl,
+            "form_conv_rate": form_conv_rate,
+            "form_entry_rate": form_entry_rate,
+            "yesterday": yesterday,
+            "yesterday_slot": yesterday_slot,
+            "from_cache": from_cache,
+            "fetched_at": fetched_at,
+            "has_password": bool(_password()),
+        },
+    )
+
+
+# ─────────────────────────────────────────────
 # 헬스체크 (Vercel용)
 # ─────────────────────────────────────────────
 

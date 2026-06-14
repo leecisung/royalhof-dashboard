@@ -1,0 +1,205 @@
+{% extends "base.html" %}
+{% block title %}일일 분석 — 광고 통합 대시보드{% endblock %}
+{% set active = 'daily' %}
+{% block content %}
+<main>
+
+  <!-- 기간 컨트롤 -->
+  <div class="card">
+    <form method="get" action="/daily" class="controls">
+      <label>기간
+        <select name="preset">
+          <option value="7d"    {% if preset=='7d' %}selected{% endif %}>최근 7일</option>
+          <option value="14d"   {% if preset=='14d' %}selected{% endif %}>최근 14일</option>
+          <option value="30d"   {% if preset=='30d' %}selected{% endif %}>최근 30일</option>
+          <option value="custom" {% if preset=='custom' %}selected{% endif %}>직접 지정</option>
+        </select>
+      </label>
+      <label>시작 <input type="date" name="start" value="{{ since }}"></label>
+      <label>종료 <input type="date" name="end" value="{{ until }}"></label>
+      <button type="submit">적용</button>
+      <a href="/daily?preset={{ preset }}&refresh=1" style="text-decoration:none">
+        <button type="button" class="outline">🔄 강제 갱신</button>
+      </a>
+      <span style="margin-left:auto;font-size:12px;color:var(--muted)">
+        📅 {{ since }} ~ {{ until }} ({{ days }}일) ·
+        {% if from_cache %}<span class="pill cache">캐시</span>{% else %}<span class="pill fresh">새로 fetch</span>{% endif %}
+        {{ fetched_at }}
+      </span>
+    </form>
+  </div>
+
+  <!-- 기간 합계 KPI -->
+  <div class="card">
+    <h2>기간 합계 KPI <span class="meta">{{ since }} ~ {{ until }} · {{ days }}일</span></h2>
+    <div class="kpi-grid">
+      <div class="kpi">
+        <div class="label">💰 총 광고비</div>
+        <div class="value">{{ "{:,}".format(sum_total) }}원</div>
+        <div class="sub">Naver {{ "{:,}".format(sum_naver) }} · Meta {{ "{:,}".format(sum_meta) }}</div>
+      </div>
+      <div class="kpi">
+        <div class="label">📩 form_submit</div>
+        <div class="value">{{ sum_form_submit }}건</div>
+        <div class="sub">form_start {{ sum_form_start }} → 제출 {{ "%.0f"|format(form_conv_rate) }}%</div>
+      </div>
+      <div class="kpi">
+        <div class="label">💵 평균 CPL</div>
+        <div class="value">{% if sum_form_submit %}{{ "{:,}".format(avg_cpl) }}원{% else %}-{% endif %}</div>
+        <div class="sub">광고비 ÷ form_submit</div>
+      </div>
+      <div class="kpi">
+        <div class="label">🌐 GA4 세션</div>
+        <div class="value">{{ "{:,}".format(sum_sessions) }}</div>
+        <div class="sub">폼 진입률 {{ "%.1f"|format(form_entry_rate) }}%</div>
+      </div>
+    </div>
+    {% if ga4_error %}
+    <p style="font-size:12px;color:#dc2626;margin-top:8px">⚠️ GA4 fetch 실패: {{ ga4_error[:120] }}</p>
+    {% endif %}
+  </div>
+
+  <!-- 어제 하이라이트 -->
+  {% if yesterday_slot %}
+  <div class="card" style="background:#eff6ff;border-left:4px solid #2e78d2">
+    <h2>📆 어제 ({{ yesterday }}) 하이라이트</h2>
+    <div class="kpi-grid" style="grid-template-columns:repeat(6, 1fr)">
+      <div class="kpi"><div class="label">광고비</div><div class="value">{{ "{:,}".format(yesterday_slot.total_spend) }}원</div></div>
+      <div class="kpi"><div class="label">Naver</div><div class="value">{{ "{:,}".format(yesterday_slot.naver_spend) }}원</div></div>
+      <div class="kpi"><div class="label">Meta</div><div class="value">{{ "{:,}".format(yesterday_slot.meta_spend) }}원</div></div>
+      <div class="kpi"><div class="label">세션</div><div class="value">{{ "{:,}".format(yesterday_slot.sessions) }}</div></div>
+      <div class="kpi"><div class="label">form_submit</div><div class="value" style="color:#16a34a">{{ yesterday_slot.form_submit }}건</div></div>
+      <div class="kpi"><div class="label">CPL</div><div class="value">{% if yesterday_slot.form_submit %}{{ "{:,}".format(yesterday_slot.cpl) }}원{% else %}-{% endif %}</div></div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- 일별 추이 표 -->
+  <div class="card">
+    <h2>📈 일별 추이</h2>
+    <p style="font-size:12px;color:var(--muted);margin:0 0 10px">최신 일자가 위. CPL = 그날 광고비 ÷ 그날 form_submit</p>
+    <table>
+      <thead>
+        <tr>
+          <th class="left">날짜</th>
+          <th>Naver 비용</th>
+          <th>Meta 비용</th>
+          <th>총 비용</th>
+          <th>Naver 클릭</th>
+          <th>Meta 클릭</th>
+          <th>GA4 세션</th>
+          <th>form_start</th>
+          <th>form_submit</th>
+          <th>CPL</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in daily_list %}
+        <tr {% if d.date == yesterday %}style="background:rgba(46,120,210,0.06);font-weight:600"{% endif %}>
+          <td class="left">{{ d.date }}</td>
+          <td>{{ "{:,}".format(d.naver_spend) }}원</td>
+          <td>{{ "{:,}".format(d.meta_spend) }}원</td>
+          <td><strong>{{ "{:,}".format(d.total_spend) }}원</strong></td>
+          <td>{{ "{:,}".format(d.naver_clk) }}</td>
+          <td>{{ "{:,}".format(d.meta_clk) }}</td>
+          <td>{{ "{:,}".format(d.sessions) }}</td>
+          <td>{{ d.form_start }}</td>
+          <td style="color:#16a34a;font-weight:600">{{ d.form_submit }}</td>
+          <td>{% if d.form_submit %}{{ "{:,}".format(d.cpl) }}원{% else %}-{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 운영주체별 -->
+  <div class="card">
+    <h2>🏢 운영주체별 비용 ({{ since }} ~ {{ until }})</h2>
+    <p style="font-size:12px;color:var(--muted);margin:0 0 10px">캠페인 작명 기준 자동 분류 (본사 / 인디엠 / 이엠넷)</p>
+    <table>
+      <thead><tr>
+        <th class="left">운영주체</th><th class="left">채널</th>
+        <th>지출</th><th>비중</th><th>노출</th><th>클릭</th><th>CPC</th>
+      </tr></thead>
+      <tbody>
+        {% for op in operators %}
+        <tr>
+          <td class="left"><strong>
+            {% if op.operator == '인디엠' %}🟠 {{ op.operator }}
+            {% elif op.operator == '이엠넷' %}🔵 {{ op.operator }}
+            {% else %}🟢 {{ op.operator }}{% endif %}
+          </strong></td>
+          <td class="left">{{ op.channels }}</td>
+          <td>{{ "{:,}".format(op.spend) }}원</td>
+          <td>{{ "%.0f"|format(op.share) }}%</td>
+          <td>{{ "{:,}".format(op.imp) }}</td>
+          <td>{{ "{:,}".format(op.clk) }}</td>
+          <td>{{ "{:,}".format(op.cpc) }}원</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 캠페인 Top 12 -->
+  <div class="card">
+    <h2>🎯 캠페인 Top 12 (기간 합산 지출 기준)</h2>
+    <table>
+      <thead><tr>
+        <th class="left">채널</th><th class="left">캠페인</th><th class="left">운영</th>
+        <th>지출</th><th>노출</th><th>클릭</th><th>CPC</th>
+      </tr></thead>
+      <tbody>
+        {% for c in top_campaigns %}
+        <tr>
+          <td class="left">{% if c.channel == 'Naver' %}<span class="pill naver">N</span>{% else %}<span class="pill meta">M</span>{% endif %}</td>
+          <td class="left">{{ c.campaign }}</td>
+          <td class="left" style="font-size:11px">{{ c.operator }}</td>
+          <td>{{ "{:,}".format(c.spend) }}원</td>
+          <td>{{ "{:,}".format(c.imp) }}</td>
+          <td>{{ "{:,}".format(c.clk) }}</td>
+          <td>{{ "{:,}".format(c.cpc) }}원</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- GA4 form_submit 출처 -->
+  <div class="card">
+    <h2>📥 GA4 form_submit 출처 ({{ sum_form_submit }}건 분해)</h2>
+    <div class="kpi-grid" style="grid-template-columns:repeat(4, 1fr)">
+      <div class="kpi"><div class="label">🔍 자연검색 (organic)</div><div class="value">{{ ga4_form_groups.organic }}건</div></div>
+      <div class="kpi"><div class="label">❓ Direct + 미상</div><div class="value">{{ ga4_form_groups.direct_unknown }}건</div></div>
+      <div class="kpi"><div class="label">💰 유료광고 (paid/cpc/sa)</div><div class="value" style="color:#16a34a">{{ ga4_form_groups.paid }}건</div></div>
+      <div class="kpi"><div class="label">🔗 레퍼럴</div><div class="value">{{ ga4_form_groups.referral }}건</div></div>
+    </div>
+    <table style="margin-top:12px">
+      <thead><tr>
+        <th class="left">Source</th><th class="left">Medium</th><th class="left">Campaign</th>
+        <th>form_submit</th>
+      </tr></thead>
+      <tbody>
+        {% for r in ga4_form_by_source %}
+        <tr>
+          <td class="left">{{ r.source }}</td>
+          <td class="left">{{ r.medium }}</td>
+          <td class="left" style="font-size:11px">{{ r.campaign }}</td>
+          <td><strong>{{ r.form_submit }}</strong></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 참고 -->
+  <div class="card" style="background:#f9fafb">
+    <p style="font-size:11px;color:var(--muted);margin:0;line-height:1.7">
+      <strong>해석 가이드</strong> · CPL = 광고비 ÷ form_submit (GA4 기준). 단 form_submit엔 가맹 외 폼도 일부 섞임 (대부분 /w/board.php = 가맹폼). <br>
+      Direct + 미상 트래픽이 크면 UTM 부착 미흡 — 인디엠/이엠넷에 광고 URL UTM 일관 부착 요청 필요. <br>
+      ‘인디엠’ 자동분류 = 캠페인 이름이 <code>#00</code>·<code>#01</code>·<code>(ON)</code> 시작. ‘이엠넷’ = <code>A.고비용</code>·<code>B.중세부</code>·<code>C.지역</code>·<code>D.지역</code>.
+    </p>
+  </div>
+
+</main>
+{% endblock %}

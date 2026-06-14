@@ -225,12 +225,51 @@ class NaverAdAPI:
     # 입찰가 수정
     # ──────────────────────────────────────────────
 
-    def update_bid(self, keyword_id: str, bid: int) -> dict:
+    def update_bid(self, keyword_id: str, bid: int, adgroup_id: str = None) -> dict:
+        """키워드 개별 입찰가 변경. Naver PUT은 fields 쿼리로 수정 대상 명시 필수,
+        body에 nccAdgroupId 필수 (누락 시 400 code 3705 'Invalid ad group number').
+        adgroup_id 미지정 시 키워드 조회로 보강."""
         path = f"/ncc/keywords/{keyword_id}"
-        body = {"bidAmt": bid, "useGroupBidAmt": False}
-        result = self._request("PUT", path, body=body)
+        if not adgroup_id:
+            cur = self._request("GET", path)
+            adgroup_id = cur.get("nccAdgroupId") if isinstance(cur, dict) else None
+        body = {"nccKeywordId": keyword_id, "nccAdgroupId": adgroup_id,
+                "bidAmt": int(bid), "useGroupBidAmt": False}
+        result = self._request("PUT", path, params={"fields": "bidAmt,useGroupBidAmt"}, body=body)
         logger.info("[API] 키워드 %s 입찰가 %d원으로 수정", keyword_id, bid)
         return result
+
+    # ──────────────────────────────────────────────
+    # 입찰가 추정 (estimate)
+    # ──────────────────────────────────────────────
+
+    def estimate_position_bid_batch(self, keywords: list, position: int,
+                                    device: str = "PC") -> dict:
+        """평균노출순위(position) 달성에 필요한 추정 입찰가.
+
+        POST /estimate/average-position-bid/keyword
+          body: {"device":"PC"|"MOBILE","items":[{"key":키워드,"position":N}]}
+          resp: {"estimate":[{"keyword":..,"position":..,"bid":..}]}
+        반환: {키워드: 추정입찰가(int)}  (실패/누락 키워드는 미포함)
+        """
+        out = {}
+        path = "/estimate/average-position-bid/keyword"
+        for i in range(0, len(keywords), 100):
+            batch = [k for k in keywords[i:i + 100] if k]
+            if not batch:
+                continue
+            body = {"device": device, "items": [{"key": k, "position": position} for k in batch]}
+            try:
+                res = self._request("POST", path, body=body)
+            except Exception as e:
+                logger.warning("[API] 입찰가 추정 배치 실패: %s", e)
+                continue
+            for e in (res.get("estimate", []) if isinstance(res, dict) else []):
+                kw = e.get("keyword")
+                bid = e.get("bid")
+                if kw and bid is not None:
+                    out[kw] = int(bid)
+        return out
 
     # ──────────────────────────────────────────────
     # 키워드 삭제

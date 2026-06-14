@@ -165,6 +165,63 @@ class GA4API:
             })
         return sorted(out, key=lambda x: -x["count"])
 
+    def fetch_daily_form_submit(self, since: date, until: date) -> list[dict]:
+        """일별 form_submit / form_start 이벤트 수."""
+        from google.analytics.data_v1beta.types import (
+            DateRange, Dimension, Metric, RunReportRequest,
+            Filter, FilterExpression, FilterExpressionList,
+        )
+        req = RunReportRequest(
+            property=f"properties/{self.property_id}",
+            date_ranges=[DateRange(start_date=str(since), end_date=str(until))],
+            dimensions=[Dimension(name="date"), Dimension(name="eventName")],
+            metrics=[Metric(name="eventCount")],
+            dimension_filter=FilterExpression(
+                or_group=FilterExpressionList(expressions=[
+                    FilterExpression(filter=Filter(field_name="eventName", string_filter=Filter.StringFilter(value="form_submit"))),
+                    FilterExpression(filter=Filter(field_name="eventName", string_filter=Filter.StringFilter(value="form_start"))),
+                ])
+            ),
+            limit=200,
+        )
+        resp = self.client.run_report(req)
+        by_date: dict[str, dict] = {}
+        for row in resp.rows:
+            dv = row.dimension_values[0].value
+            d = f"{dv[0:4]}-{dv[4:6]}-{dv[6:8]}"
+            ev = row.dimension_values[1].value
+            cnt = int(row.metric_values[0].value or 0)
+            by_date.setdefault(d, {"date": d, "form_submit": 0, "form_start": 0})
+            by_date[d][ev] = by_date[d].get(ev, 0) + cnt
+        return sorted(by_date.values(), key=lambda x: x["date"])
+
+    def fetch_form_submit_by_source(self, since: date, until: date) -> list[dict]:
+        """form_submit 출처별 (source/medium)."""
+        from google.analytics.data_v1beta.types import (
+            DateRange, Dimension, Metric, RunReportRequest,
+            Filter, FilterExpression,
+        )
+        req = RunReportRequest(
+            property=f"properties/{self.property_id}",
+            date_ranges=[DateRange(start_date=str(since), end_date=str(until))],
+            dimensions=[Dimension(name="sessionSource"), Dimension(name="sessionMedium"), Dimension(name="sessionCampaignName")],
+            metrics=[Metric(name="eventCount")],
+            dimension_filter=FilterExpression(
+                filter=Filter(field_name="eventName", string_filter=Filter.StringFilter(value="form_submit")),
+            ),
+            limit=50,
+        )
+        resp = self.client.run_report(req)
+        out = []
+        for row in resp.rows:
+            out.append({
+                "source": row.dimension_values[0].value,
+                "medium": row.dimension_values[1].value,
+                "campaign": row.dimension_values[2].value,
+                "form_submit": int(row.metric_values[0].value or 0),
+            })
+        return sorted(out, key=lambda x: -x["form_submit"])
+
     def fetch_landing_pages(self, since: date, until: date, limit: int = 20) -> list[dict]:
         """랜딩 페이지 top N."""
         rows = self._run(
