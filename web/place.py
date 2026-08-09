@@ -227,6 +227,31 @@ def register(app, templates, require_auth):
             logger.warning("현재 대표키워드 조회 실패: %s", e)
         return JSONResponse(plan)
 
+    @app.get("/api/place/rankhistory")
+    def place_rankhistory(session: Optional[str] = Cookie(None)):
+        """순위 추이 (place_watch.py가 매일 커밋하는 CSV, 최근 14일)."""
+        require_auth(session)
+        import csv as _csv
+        p = ROOT / "data" / "place_rank_history.csv"
+        if not p.exists():
+            return JSONResponse({"dates": [], "series": {}})
+        hist = {}
+        dates = []
+        try:
+            with open(p, encoding="utf-8-sig") as f:
+                for row in _csv.DictReader(f):
+                    d, kw = row.get("date"), row.get("keyword")
+                    rank = row.get("rank") or None
+                    if not d or not kw:
+                        continue
+                    if d not in dates:
+                        dates.append(d)
+                    hist.setdefault(kw, {})[d] = int(rank) if rank else None
+        except Exception as e:
+            return JSONResponse({"error": str(e)}, status_code=500)
+        dates = sorted(set(dates))[-14:]
+        return JSONResponse({"dates": dates, "series": hist})
+
     @app.get("/api/place/ranks")
     def place_ranks(session: Optional[str] = Cookie(None)):
         require_auth(session)
