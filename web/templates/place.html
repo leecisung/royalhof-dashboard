@@ -180,7 +180,8 @@ async function loadPlan(){
     $('#planmeta').textContent = '('+esc(d.generated)+' 조사, 월검색량=PC+모바일)';
     const rec = d.recommendation||{};
     const tags = rec.final_tags || [].concat(rec.tags_region||[], rec.tags_common||[], rec.tags_menu||[]);
-    $('#tagta').value = tags.join(', ');
+    $('#tagta').value = tags.join('\n');   // 태그 입력창은 줄바꿈(엔터) 구분, 최대 50개
+    $('#tagta').rows = 8;
     $('#curkw').innerHTML = (d.current_keywords||[]).map(k=>'<b>'+esc(k)+'</b>').join(' · ') || '(조회 실패)';
     const diff = [];
     if (rec.remove) diff.push('<div class="small" style="margin-top:8px"><b style="color:var(--bad)">제거 '+Object.keys(rec.remove).length+'</b>: '+Object.keys(rec.remove).map(esc).join(', ')+'</div>');
