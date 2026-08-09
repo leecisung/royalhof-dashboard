@@ -209,34 +209,15 @@ def apply_target(target: dict, when: datetime, dry: bool) -> None:
     if pacing_note:
         changed.append(pacing_note)
 
-    # 휴무일 (off_days: ["mon"]) → 하루 종일 OFF + 입찰 조정 스킵
+    # 휴무일/심야: OFF 토글 금지 (OFF→ON 시 노출 재개까지 지연 발생) → 최저가 유지로 대체
     off_day = DAY_KEYS[when.weekday()] in [str(d).lower() for d in target.get("off_days", [])]
+    if off_day:
+        want = int(target.get("bid_min", 50))
+        desc = f"휴무일_최저가{want} (OFF 대신 — 노출 재개 지연 방지)"
+    if g.get("status") == "PAUSED":
+        logger.warning("[%s] 그룹 PAUSED — 입찰가만 갱신, 광고는 안 나감 (UI에서 ON 권장, 토글 금지)", name)
 
-    # 영업시간 ON/OFF (on_hours: "11-22" → 그 시간대만 광고 ON, 밖이면 userLock)
-    on_hours = target.get("on_hours")
-    if on_hours:
-        try:
-            s, e = (int(x) for x in on_hours.split("-"))
-            want_on = (s <= when.hour < e) and not off_day
-            if off_day:
-                desc = "휴무일"
-            is_on = not bool(g.get("userLock"))
-            if want_on != is_on:
-                changed.append("ON" if want_on else "OFF(마감)")
-                logger.info("[%s] 광고 %s → %s (영업 %s시)%s", name,
-                            "ON" if is_on else "OFF", "ON" if want_on else "OFF",
-                            on_hours, " [DRY-RUN]" if dry else "")
-                if not dry:
-                    body = dict(g)
-                    body["userLock"] = not want_on
-                    g = api._request("PUT", f"/ncc/adgroups/{gid}",
-                                     params={"fields": "userLock"}, body=body)
-        except ValueError:
-            logger.warning("[%s] on_hours 형식 오류: %r", name, on_hours)
-    elif g.get("status") == "PAUSED":
-        logger.warning("[%s] 그룹 PAUSED — 입찰가만 갱신, 광고는 안 나감", name)
-
-    if cur != want and not off_day:
+    if cur != want:
         changed.append(f"{cur}→{want}원")
         logger.info("[%s] %d → %d원 (%s)%s", name, cur, want, desc,
                     " [DRY-RUN]" if dry else "")

@@ -6,22 +6,21 @@
    "enabled": true,
    "env_prefix": "SAJIK",
    "adgroup_id": "grp-a001-06-000000068828400",
-   "on_hours": "09-22",
    "off_days": [
     "mon"
    ],
-   "bid_min": 70,
+   "bid_min": 50,
    "bid_max": 600,
    "schedule": {
-    "_comment": "저가 시작(실측 CPC 55~110원 근거) — 소진율 낮으면 pacing이 매일 +10%씩 올림",
+    "_comment": "상시 ON(토글 금지 — OFF→ON 노출 재개 지연). 심야는 최저가 50원. 벤치마크 160원 기준",
     "default": {
-     "00-09": 70,
+     "00-09": 50,
      "09-13": 150,
      "13-16": 100,
      "16-19": 200,
      "19-21": 180,
      "21-22": 120,
-     "22-24": 70
+     "22-24": 50
     }
    },
    "event": {
@@ -49,7 +48,7 @@
    "off_days": [
     "mon"
    ],
-   "bid_min": 70,
+   "bid_min": 50,
    "bid_max": 500,
    "schedule": {
     "default": {
@@ -74,7 +73,7 @@
    "off_days": [
     "mon"
    ],
-   "bid_min": 70,
+   "bid_min": 50,
    "bid_max": 600,
    "schedule": {
     "default": {
@@ -102,7 +101,7 @@
    "enabled": false,
    "env_prefix": "SAJIK",
    "adgroup_id": "grp-a001-06-000000069026513",
-   "bid_min": 70,
+   "bid_min": 50,
    "bid_max": 600,
    "schedule": {
     "default": {

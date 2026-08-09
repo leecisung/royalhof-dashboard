@@ -107,16 +107,25 @@ def main():
     prev_ranks = state.get("ranks", {})
     alerts = []
 
-    # 1. 순위 조회 + 변동 감지
+    # 감시 대상: config 키워드(변동 알림 대상) + 태그플랜 검색량 100+ 전체(요일별 기록용)
+    alert_kws = set(cfg.get("keywords", []))
+    try:
+        plan = json.loads((ROOT / "data" / "sajik_tag_plan.json").read_text(encoding="utf-8"))
+        extra = [r["kw"] for r in plan.get("rows", []) if r.get("total", 0) >= 100]
+    except Exception:
+        extra = []
+    all_kws = list(dict.fromkeys(list(alert_kws) + extra))[:45]
+
+    # 1. 순위 조회 + 변동 감지 (알림은 config 키워드만, 기록은 전체)
     ranks, rows = {}, []
-    for kw in cfg.get("keywords", []):
+    for kw in all_kws:
         rank, size = fetch_rank(kw, loc.get("x"), loc.get("y"), pid)
         ranks[kw] = rank
         rows.append([today, kw, loc.get("name"), rank if rank else "", size, ""])
         old = prev_ranks.get(kw)
         shown = f"{rank}위" if rank else "밖"
         logger.info("  %s → %s (이전 %s)", kw, shown, f"{old}위" if old else "밖/신규")
-        if kw in prev_ranks:
+        if kw in prev_ranks and kw in alert_kws:
             if old and not rank:
                 alerts.append(f"🔻 '{kw}' {old}위→리스트 이탈")
             elif not old and rank:
@@ -151,7 +160,8 @@ def main():
     if args.replan or datetime.now().weekday() == 0:
         logger.info("주간 태그 플랜 재조사 시작")
         r = subprocess.run([sys.executable, str(ROOT / "scripts" / "sajik_tag_plan.py")],
-                           cwd=ROOT, capture_output=True, text=True, timeout=900)
+                           cwd=ROOT, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", timeout=900)
         if r.returncode == 0:
             push_paths.append("data/sajik_tag_plan.json")
             alerts.append("📊 주간 키워드 재조사 완료 — 대시보드 /place 갱신됨")

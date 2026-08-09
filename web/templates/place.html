@@ -89,22 +89,16 @@
     <div id="tagdiff"></div>
   </div>
 
-  <h2>키워드 점령 현황 <span class="small" id="planmeta"></span></h2>
-  <table id="plan">
-    <thead><tr><th>키워드</th><th>월 검색량</th><th>현재 순위</th><th>상태</th></tr></thead>
-    <tbody><tr><td colspan="4" class="small">불러오는 중…</td></tr></tbody>
-  </table>
+  <h2>키워드 점령 현황 <span class="small" id="planmeta"></span> <span class="small">— 매일 08:30 요일별 순위 기록</span></h2>
+  <div style="overflow-x:auto"><table id="plan">
+    <tbody><tr><td class="small">불러오는 중…</td></tr></tbody>
+  </table></div>
 
   <h2>지도 오가닉 순위 <span id="spin"></span></h2>
   <table id="ranks">
-    <thead><tr><th>키워드</th><th>순위</th><th>1위 업체</th></tr></thead>
-    <tbody><tr><td colspan="3" class="small">조회 중… (실시간이라 몇 초 걸립니다)</td></tr></tbody>
+    <thead><tr><th>키워드</th><th>월 검색량</th><th>순위</th><th>1위 업체</th></tr></thead>
+    <tbody><tr><td colspan="4" class="small">조회 중… (실시간이라 몇 초 걸립니다)</td></tr></tbody>
   </table>
-
-  <h2>순위 추이 <span class="small">(매일 08:30 자동 기록, 변동 시 카톡)</span></h2>
-  <div style="overflow-x:auto"><table id="hist">
-    <tbody><tr><td class="small">이력 수집 중 — 내일부터 표시됩니다</td></tr></tbody>
-  </table></div>
 
   <h2>‘사직 맛집’ 플레이스광고 집행 업체 <span class="small" id="adcount"></span></h2>
   <div class="chips" id="ads"><span class="small">조회 중…</span></div>
@@ -173,9 +167,12 @@ function renderCals(d){
   $('#cals').innerHTML = html;
 }
 
+let VOL = {};   // 정규화 키워드 → 월검색량 (오가닉 순위표에서 사용)
+
 async function loadPlan(){
   try{
-    const r = await fetch('/api/place/tagplan'); const d = await r.json();
+    const [pr, hr] = await Promise.all([fetch('/api/place/tagplan'), fetch('/api/place/rankhistory')]);
+    const d = await pr.json(); const h = await hr.json();
     if (d.error) throw new Error(d.error);
     $('#planmeta').textContent = '('+esc(d.generated)+' 조사, 월검색량=PC+모바일)';
     const rec = d.recommendation||{};
@@ -183,18 +180,32 @@ async function loadPlan(){
     $('#tagta').value = tags.join('\n');   // 태그 입력창은 줄바꿈(엔터) 구분, 최대 50개
     $('#tagta').rows = 8;
     $('#curkw').innerHTML = (d.current_keywords||[]).map(k=>'<b>'+esc(k)+'</b>').join(' · ') || '(조회 실패)';
-    const diff = [];
-    if (rec.remove) diff.push('<div class="small" style="margin-top:8px"><b style="color:var(--bad)">제거 '+Object.keys(rec.remove).length+'</b>: '+Object.keys(rec.remove).map(esc).join(', ')+'</div>');
-    if (rec.add) diff.push('<div class="small" style="margin-top:4px"><b style="color:var(--good)">추가 '+Object.keys(rec.add).length+'</b>: '+Object.entries(rec.add).map(([k,v])=>esc(k)+' <span style="opacity:.6">('+esc(v)+')</span>').join(', ')+'</div>');
-    $('#tagdiff').innerHTML = diff.join('');
+    $('#tagdiff').innerHTML = '';
+
+    // 점령 현황: 검색량 + 최근 7일 요일별 순위 + 상태
     const stCls = s => s==='먹고있음' ? 'st-own' : (s==='노출중(하위)' ? 'st-edge' : (s==='점령대상' ? 'st-target' : 'small'));
-    const rows = (d.rows||[]).filter(x=>x.total>=50).slice(0,30);
-    $('#plan tbody').innerHTML = rows.map(x => {
-      const shown = x.rank ? x.rank+'위' : (x.list_size>0 ? x.list_size+'위 밖' : '-');
-      return '<tr><td>'+esc(x.kw)+'</td><td>'+x.total.toLocaleString()+'</td><td>'+shown+'</td><td class="'+stCls(x.status)+'">'+esc(x.status)+'</td></tr>';
+    const dates = (h.dates||[]).slice(-7);
+    const series = h.series||{};
+    const days = ['일','월','화','수','목','금','토'];
+    const rows = (d.rows||[]).filter(x=>x.total>=100).slice(0,40);
+    rows.forEach(x => VOL[x.kw.replace(/\s+/g,'')] = x.total);
+    const dh = dates.map(x=>{
+      const wd = days[new Date(x+'T00:00:00').getDay()];
+      return '<th>'+x.slice(5)+'<br><span class="small">'+wd+'</span></th>';
     }).join('');
+    let html = '<thead><tr><th>키워드</th><th>월 검색량</th>'+dh+'<th>상태</th></tr></thead><tbody>';
+    html += rows.map(x => {
+      const m = series[x.kw]||{};
+      const cells = dates.map(dt=>{
+        const v = m[dt];
+        const cls = v==null ? 'small' : (v<=3 ? 'r-good' : (v<=10 ? 'r-mid' : ''));
+        return '<td class="'+cls+'">'+(v==null?'–':v)+'</td>';
+      }).join('');
+      return '<tr><td>'+esc(x.kw)+'</td><td>'+x.total.toLocaleString()+'</td>'+cells+'<td class="'+stCls(x.status)+'">'+esc(x.status)+'</td></tr>';
+    }).join('');
+    $('#plan').innerHTML = html + '</tbody>';
   } catch(e){
-    $('#plan tbody').innerHTML = '<tr><td colspan="4" class="small">'+esc(e.message)+'</td></tr>';
+    $('#plan').innerHTML = '<tbody><tr><td class="small">'+esc(e.message)+'</td></tr></tbody>';
   }
 }
 
@@ -208,7 +219,8 @@ async function loadRanks(){
       if (!x.ok) txt='조회실패';
       else if (x.rank){ txt=x.rank+'위'; cls = x.rank<=3?'r-good':(x.rank<=10?'r-mid':'r-bad'); }
       else txt=(x.list_size||0)+'위 밖';
-      return '<tr><td>'+esc(x.keyword)+'</td><td class="'+cls+'">'+txt+'</td><td class="small">'+esc(x.top1||'-')+'</td></tr>';
+      const vol = VOL[x.keyword.replace(/\s+/g,'')];
+      return '<tr><td>'+esc(x.keyword)+'</td><td>'+(vol?vol.toLocaleString():'-')+'</td><td class="'+cls+'">'+txt+'</td><td class="small">'+esc(x.top1||'-')+'</td></tr>';
     }).join('');
     const ads = d.ads||[];
     $('#adcount').textContent = '('+ads.length+'곳, '+esc(d.location||'')+' 기준)';
@@ -222,23 +234,6 @@ async function loadRanks(){
   $('#spin').textContent = '';
 }
 
-async function loadHist(){
-  try{
-    const r = await fetch('/api/place/rankhistory'); const d = await r.json();
-    const dates = d.dates||[];
-    if (dates.length < 2) return;   // 첫날은 표 생략
-    let html = '<thead><tr><th>키워드</th>' + dates.map(x=>'<th>'+x.slice(5)+'</th>').join('') + '</tr></thead><tbody>';
-    for (const [kw, m] of Object.entries(d.series||{})){
-      html += '<tr><td>'+esc(kw)+'</td>' + dates.map(x=>{
-        const v = m[x];
-        const cls = v==null ? 'small' : (v<=3 ? 'r-good' : (v<=10 ? 'r-mid' : ''));
-        return '<td class="'+cls+'">'+(v==null?'–':v)+'</td>';
-      }).join('') + '</tr>';
-    }
-    $('#hist').innerHTML = html + '</tbody>';
-  } catch(e){}
-}
-
 function copyTags(){
   const ta = $('#tagta');
   ta.select();
@@ -247,7 +242,7 @@ function copyTags(){
     () => { document.execCommand('copy'); $('#copymsg').textContent = '복사됨 ✓'; });
 }
 
-loadStatus(); loadRanks(); loadPlan(); loadHist();
+loadStatus(); loadPlan().then(loadRanks);
 </script>
 </body>
 </html>
