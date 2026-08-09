@@ -164,12 +164,32 @@ def register(app, templates, require_auth):
 
             live = {}
             try:
-                g = _api()._request("GET", f"/ncc/adgroups/{target.get('adgroup_id')}")
+                api = _api()
+                gid = target.get("adgroup_id")
+                g = api._request("GET", f"/ncc/adgroups/{gid}")
                 live = {"bid": g.get("bidAmt"), "status": g.get("status"),
                         "userLock": bool(g.get("userLock")),
                         "dailyBudget": g.get("dailyBudget")}
+                yday = (now - timedelta(days=1)).date()
+                res = api._request("GET", "/stats", params={
+                    "ids": gid, "fields": '["impCnt","clkCnt","salesAmt"]',
+                    "timeRange": json.dumps({"since": str(yday), "until": str(yday)}),
+                })
+                for r in (res.get("data", []) if isinstance(res, dict) else []):
+                    clk = int(r.get("clkCnt", 0) or 0)
+                    cost = int(r.get("salesAmt", 0) or 0)
+                    live["yday"] = {"imp": int(r.get("impCnt", 0) or 0), "clk": clk,
+                                    "cost": cost, "cpc": cost // clk if clk else 0}
             except Exception as e:
                 live = {"error": str(e)}
+
+            scale = None
+            try:
+                st = json.loads((ROOT / "data" / "autoplace_state.json")
+                                .read_text(encoding="utf-8"))
+                scale = st.get(target.get("adgroup_id"), {}).get("bid_scale")
+            except Exception:
+                pass
 
             return JSONResponse({
                 "name": target.get("name"), "now_hour": now.hour,
@@ -179,7 +199,7 @@ def register(app, templates, require_auth):
                 "on_hours": target.get("on_hours"),
                 "home_game_today": today_str in games,
                 "upcoming_games": sorted(d for d in games if d >= today_str)[:10],
-                "schedule": schedule, "live": live,
+                "schedule": schedule, "live": live, "bid_scale": scale,
             })
         except Exception as e:
             return JSONResponse({"error": str(e)}, status_code=500)

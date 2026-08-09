@@ -84,8 +84,11 @@ async function loadStatus(){
   html += '<span><span class="lbl">현재 입찰가</span> <b>'+(live.bid!=null?live.bid.toLocaleString()+'원':'–')+'</b></span>';
   html += '<span><span class="lbl">일예산</span> <b>'+(live.dailyBudget!=null?live.dailyBudget.toLocaleString()+'원':'–')+'</b></span>';
   html += '<span><span class="lbl">영업</span> <b>'+esc(d.on_hours||'-')+'시</b></span>';
+  if (d.bid_scale!=null && d.bid_scale!==1) html += '<span><span class="lbl">입찰배율</span> <b>×'+d.bid_scale+'</b></span>';
   if (d.off_day) html += '<span class="pill off">오늘 휴무</span>';
   if (d.home_game_today) html += '<span class="pill badge">⚾ 오늘 홈경기 (boost)</span>';
+  const y = live.yday;
+  if (y) html += '<span class="small">어제: 노출 '+y.imp.toLocaleString()+' · 클릭 '+y.clk+' · '+y.cost.toLocaleString()+'원'+(y.clk?' · CPC '+y.cpc.toLocaleString()+'원':'')+'</span>';
   $('#statusbar').innerHTML = html;
 
   $('#sched').innerHTML = (d.schedule||[]).map(c => {

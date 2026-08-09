@@ -111,6 +111,73 @@ def make_api(target: dict) -> NaverAdAPI:
                       os.getenv(f"{pfx}_CUSTOMER_ID"))
 
 
+STATE_FILE = ROOT / "data" / "autoplace_state.json"
+
+
+def pacing_scale(api, target: dict, g: dict, when: datetime, dry: bool) -> tuple:
+    """'2페이지 전략' 자동화: 어제 예산 소진율로 입찰 배율 조정 (하루 1회).
+
+    순위(1페이지)가 목표가 아니라 같은 예산으로 클릭 최대화가 목표.
+    - 소진율 >= high: 예산이 일찍 마름 → 배율↓ (더 싼 CPC로 더 많은 클릭)
+    - 소진율 <  low : 예산이 남음 → 배율↑ (노출 부족)
+    반환 (scale, 조정설명 or None)
+    """
+    pac = target.get("pacing", {})
+    if not pac.get("enabled"):
+        return 1.0, None
+    try:
+        state = json.loads(STATE_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        state = {}
+    key = target.get("adgroup_id", "_")
+    st = state.get(key, {"bid_scale": 1.0})
+    scale = float(st.get("bid_scale", 1.0))
+    today = when.strftime("%Y-%m-%d")
+    if st.get("last_date") == today or when.hour < 6:   # 하루 1회, 어제 집계 안정 후
+        return scale, None
+
+    yday_dt = when - timedelta(days=1)
+    if DAY_KEYS[yday_dt.weekday()] in [str(d).lower() for d in target.get("off_days", [])]:
+        return scale, None   # 어제 휴무 → 소진 0%는 정상, 배율 조정 스킵
+    yday = yday_dt.date()
+    res = api._request("GET", "/stats", params={
+        "ids": key,
+        "fields": '["impCnt","clkCnt","salesAmt"]',
+        "timeRange": json.dumps({"since": str(yday), "until": str(yday)}),
+    })
+    rows = res.get("data", []) if isinstance(res, dict) else []
+    imp = clk = cost = 0
+    for r in rows:
+        imp = int(r.get("impCnt", 0) or 0)
+        clk = int(r.get("clkCnt", 0) or 0)
+        cost = int(r.get("salesAmt", 0) or 0)
+    budget = int(g.get("dailyBudget") or 0)
+    if budget <= 0:
+        return scale, None
+    rate = cost / budget
+    hi, lo = float(pac.get("high", 0.9)), float(pac.get("low", 0.65))
+    step = float(pac.get("step", 0.1))
+    old = scale
+    note = None
+    if rate >= hi:
+        scale = round(scale - step, 2)
+        note = f"어제 소진{rate:.0%}≥{hi:.0%}→배율↓ (싼클릭 극대화)"
+    elif rate < lo:
+        scale = round(scale + step, 2)
+        note = f"어제 소진{rate:.0%}<{lo:.0%}→배율↑ (노출부족)"
+    scale = max(float(pac.get("min", 0.5)), min(float(pac.get("max", 1.5)), scale))
+    desc = (f"{note} {old}→{scale}" if note and scale != old else None)
+    logger.info("[pacing] 어제 노출%d 클릭%d 비용%d/%d(%.0f%%) CPC%d → 배율 %s",
+                imp, clk, cost, budget, rate * 100,
+                cost // clk if clk else 0, scale)
+    if not dry:
+        state[key] = {"bid_scale": scale, "last_date": today,
+                      "yday": {"imp": imp, "clk": clk, "cost": cost, "rate": round(rate, 3)}}
+        STATE_FILE.write_text(json.dumps(state, ensure_ascii=False, indent=1),
+                              encoding="utf-8")
+    return scale, desc
+
+
 def apply_target(target: dict, when: datetime, dry: bool) -> None:
     name = target.get("name", "?")
     gid = target.get("adgroup_id")
@@ -121,6 +188,15 @@ def apply_target(target: dict, when: datetime, dry: bool) -> None:
     g = api._request("GET", f"/ncc/adgroups/{gid}")
     cur = int(g.get("bidAmt") or 0)
     changed = []
+
+    # 2페이지 전략: 소진율 기반 입찰 배율 (10원 단위 반올림)
+    scale, pacing_note = pacing_scale(api, target, g, when, dry)
+    if scale != 1.0:
+        lo_c, hi_c = int(target.get("bid_min", 70)), int(target.get("bid_max", 100000))
+        want = max(lo_c, min(hi_c, int(round(want * scale / 10.0)) * 10))
+        desc += f" ×배율{scale}={want}"
+    if pacing_note:
+        changed.append(pacing_note)
 
     # 휴무일 (off_days: ["mon"]) → 하루 종일 OFF + 입찰 조정 스킵
     off_day = DAY_KEYS[when.weekday()] in [str(d).lower() for d in target.get("off_days", [])]
