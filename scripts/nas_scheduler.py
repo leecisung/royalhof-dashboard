@@ -30,8 +30,9 @@ logger = logging.getLogger("nas_scheduler")
 
 def run(script: str):
     logger.info(">>> %s 실행", script)
+    parts = script.split()
     try:
-        r = subprocess.run([sys.executable, str(ROOT / "scripts" / script)],
+        r = subprocess.run([sys.executable, str(ROOT / "scripts" / parts[0]), *parts[1:]],
                            cwd=ROOT, capture_output=True, text=True,
                            encoding="utf-8", errors="replace", timeout=1800)
         tail = (r.stdout or r.stderr or "").strip().splitlines()[-3:]
@@ -54,6 +55,9 @@ def main():
         if now.weekday() == 0 and now.hour >= 7 and done.get("lotte") != dkey:
             done["lotte"] = dkey
             run("update_lotte_games.py")
+        if (now.hour, now.minute) >= (8, 30) and done.get("watch") != dkey:
+            done["watch"] = dkey
+            run("place_watch.py --no-push")
         time.sleep(30)
 
 
