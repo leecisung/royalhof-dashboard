@@ -33,6 +33,19 @@
   th { color:var(--mut); font-weight:600; font-size:11.5px; }
   tr:last-child td { border-bottom:0; }
   .r-good { color:var(--good); font-weight:700; } .r-mid{ color:var(--warn); font-weight:700; } .r-bad{ color:var(--mut); }
+  .cals { display:flex; flex-wrap:wrap; gap:14px; }
+  .cal { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px 14px; }
+  .cal h3 { margin:0 0 8px; font-size:13px; color:var(--mut); text-align:center; }
+  .cal table { border:0; background:transparent; }
+  .cal th,.cal td { border:0; padding:3px 0; width:34px; text-align:center; font-size:12px; white-space:nowrap; }
+  .cal th { font-size:10.5px; }
+  .cal td.dim { color:#3d4452; }
+  .cal td.offd { color:var(--mut); opacity:.45; }
+  .cal td.game { background:rgba(79,140,255,.18); border-radius:7px; color:var(--accent); font-weight:700; }
+  .cal td.today { outline:1.5px solid var(--good); border-radius:7px; }
+  .st-own { color:var(--good); font-weight:700; }
+  .st-edge { color:var(--warn); font-weight:700; }
+  .st-target { color:var(--bad); font-weight:700; }
   .chips { display:flex; flex-wrap:wrap; gap:6px; }
   .chip { background:var(--card); border:1px solid var(--line); border-radius:999px; padding:3px 11px; font-size:12px; color:var(--mut); }
   .chip.mine { border-color:var(--good); color:var(--good); font-weight:700; }
@@ -58,6 +71,15 @@
   <h2>오늘 자동입찰 스케줄</h2>
   <div class="sched" id="sched"></div>
   <div class="small" style="margin-top:6px" id="gameinfo"></div>
+
+  <h2>⚾ 경기 달력 <span class="small">(회색=월 휴무 · 파랑=홈경기 boost)</span></h2>
+  <div class="cals" id="cals"></div>
+
+  <h2>키워드 점령 현황 <span class="small" id="planmeta"></span></h2>
+  <table id="plan">
+    <thead><tr><th>키워드</th><th>월 검색량</th><th>현재 순위</th><th>상태</th></tr></thead>
+    <tbody><tr><td colspan="4" class="small">불러오는 중…</td></tr></tbody>
+  </table>
 
   <h2>지도 오가닉 순위 <span id="spin"></span></h2>
   <table id="ranks">
@@ -100,6 +122,52 @@ async function loadStatus(){
   $('#gameinfo').textContent = up.length
     ? '⚾ 홈경기 예정(저녁 boost ×1.3): ' + up.map(s=>s.slice(5)).join(', ')
     : '남은 홈경기 없음 — 야구 boost 자동 비활성.';
+  renderCals(d);
+}
+
+function renderCals(d){
+  const games = new Set(d.game_dates||[]);
+  const offDays = d.off_days||[];           // ['mon']
+  const dayIdx = {sun:0, mon:1, tue:2, wed:3, thu:4, fri:5, sat:6};
+  const offIdx = offDays.map(k=>dayIdx[k]).filter(v=>v!=null);
+  const today = d.today;                    // 'YYYY-MM-DD'
+  const [ty,tm] = today.split('-').map(Number);
+  let html = '';
+  for (let k=0; k<2; k++){                  // 이번 달 + 다음 달
+    const y = tm+k>12 ? ty+1 : ty, m = (tm+k-1)%12+1;
+    const first = new Date(y, m-1, 1), days = new Date(y, m, 0).getDate();
+    let cells = '<tr>' + '일월화수목금토'.split('').map(c=>'<th>'+c+'</th>').join('') + '</tr><tr>';
+    for (let i=0;i<first.getDay();i++) cells += '<td class="dim"></td>';
+    for (let dd=1; dd<=days; dd++){
+      const dow = (first.getDay()+dd-1)%7;
+      const ds = y+'-'+String(m).padStart(2,'0')+'-'+String(dd).padStart(2,'0');
+      let cls = [];
+      if (games.has(ds)) cls.push('game');
+      if (offIdx.includes(dow)) cls.push('offd');
+      if (ds===today) cls.push('today');
+      cells += '<td class="'+cls.join(' ')+'">'+(games.has(ds)?'⚾':'')+dd+'</td>';
+      if (dow===6 && dd<days) cells += '</tr><tr>';
+    }
+    cells += '</tr>';
+    html += '<div class="cal"><h3>'+y+'년 '+m+'월</h3><table>'+cells+'</table></div>';
+  }
+  $('#cals').innerHTML = html;
+}
+
+async function loadPlan(){
+  try{
+    const r = await fetch('/api/place/tagplan'); const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    $('#planmeta').textContent = '('+esc(d.generated)+' 조사, 월검색량=PC+모바일)';
+    const stCls = s => s==='먹고있음' ? 'st-own' : (s==='노출중(하위)' ? 'st-edge' : (s==='점령대상' ? 'st-target' : 'small'));
+    const rows = (d.rows||[]).filter(x=>x.total>=50).slice(0,30);
+    $('#plan tbody').innerHTML = rows.map(x => {
+      const shown = x.rank ? x.rank+'위' : (x.list_size>0 ? x.list_size+'위 밖' : '-');
+      return '<tr><td>'+esc(x.kw)+'</td><td>'+x.total.toLocaleString()+'</td><td>'+shown+'</td><td class="'+stCls(x.status)+'">'+esc(x.status)+'</td></tr>';
+    }).join('');
+  } catch(e){
+    $('#plan tbody').innerHTML = '<tr><td colspan="4" class="small">'+esc(e.message)+'</td></tr>';
+  }
 }
 
 async function loadRanks(){
@@ -126,7 +194,7 @@ async function loadRanks(){
   $('#spin').textContent = '';
 }
 
-loadStatus(); loadRanks();
+loadStatus(); loadRanks(); loadPlan();
 </script>
 </body>
 </html>

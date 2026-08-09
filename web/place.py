@@ -199,10 +199,23 @@ def register(app, templates, require_auth):
                 "on_hours": target.get("on_hours"),
                 "home_game_today": today_str in games,
                 "upcoming_games": sorted(d for d in games if d >= today_str)[:10],
+                "game_dates": sorted(games),
+                "off_days": [str(d).lower() for d in target.get("off_days", [])],
                 "schedule": schedule, "live": live, "bid_scale": scale,
             })
         except Exception as e:
             return JSONResponse({"error": str(e)}, status_code=500)
+
+    @app.get("/api/place/tagplan")
+    def place_tagplan(session: Optional[str] = Cookie(None)):
+        """사직점 태그/키워드 점령 플랜 (scripts/sajik_tag_plan.py 산출물)."""
+        require_auth(session)
+        plan = _cfg("sajik_tag_plan.json")
+        if not plan:
+            return JSONResponse({"error": "sajik_tag_plan.json 없음 — "
+                                 "python scripts/sajik_tag_plan.py 실행 필요"},
+                                status_code=404)
+        return JSONResponse(plan)
 
     @app.get("/api/place/ranks")
     def place_ranks(session: Optional[str] = Cookie(None)):

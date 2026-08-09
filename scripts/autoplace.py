@@ -158,18 +158,29 @@ def pacing_scale(api, target: dict, g: dict, when: datetime, dry: bool) -> tuple
     hi, lo = float(pac.get("high", 0.9)), float(pac.get("low", 0.65))
     step = float(pac.get("step", 0.1))
     old = scale
-    note = None
+    adjust = None
     if rate >= hi:
         scale = round(scale - step, 2)
-        note = f"어제 소진{rate:.0%}≥{hi:.0%}→배율↓ (싼클릭 극대화)"
+        adjust = f"소진{rate:.0%}→배율↓{scale} (싼클릭 극대화)"
     elif rate < lo:
         scale = round(scale + step, 2)
-        note = f"어제 소진{rate:.0%}<{lo:.0%}→배율↑ (노출부족)"
+        adjust = f"소진{rate:.0%}→배율↑{scale} (노출부족)"
     scale = max(float(pac.get("min", 0.5)), min(float(pac.get("max", 1.5)), scale))
-    desc = (f"{note} {old}→{scale}" if note and scale != old else None)
-    logger.info("[pacing] 어제 노출%d 클릭%d 비용%d/%d(%.0f%%) CPC%d → 배율 %s",
-                imp, clk, cost, budget, rate * 100,
-                cost // clk if clk else 0, scale)
+
+    # CTR 진단 (착시 주의: 노출량과 함께 봐야 함 — 자동조치 없이 코멘트만)
+    cpc = cost // clk if clk else 0
+    ctr = clk / imp if imp else 0
+    tip = ""
+    if imp and ctr >= 0.05 and rate < lo:
+        tip = " ⚡CTR높음+노출부족 — 태그 확장/입찰↑ 여지"
+    elif imp >= 500 and ctr < 0.01:
+        tip = " ⚠CTR 1%미만 — 소재·타겟 점검"
+    desc = (f"어제 노출{imp:,} 클릭{clk} {cost:,}원(소진{rate:.0%})"
+            + (f" CPC{cpc:,}" if clk else "")
+            + (f" | {adjust}" if adjust and scale != old else " | 배율유지") + tip)
+    logger.info("[pacing] %s", desc)
+    if not (adjust and scale != old):
+        desc = None if imp == 0 and cost == 0 else desc   # 무활동 날은 카톡 생략
     if not dry:
         state[key] = {"bid_scale": scale, "last_date": today,
                       "yday": {"imp": imp, "clk": clk, "cost": cost, "rate": round(rate, 3)}}
