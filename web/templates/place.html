@@ -46,6 +46,9 @@
   .st-own { color:var(--good); font-weight:700; }
   .st-edge { color:var(--warn); font-weight:700; }
   .st-target { color:var(--bad); font-weight:700; }
+  .tagbox { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px 14px; }
+  .tagbox textarea { width:100%; background:#0c0e12; border:1px solid var(--line); border-radius:8px; padding:8px 10px; color:var(--txt); font:12.5px/1.6 inherit; resize:vertical; }
+  .tagbox button { background:var(--accent); border:0; border-radius:8px; padding:7px 12px; color:#fff; cursor:pointer; font:inherit; }
   .chips { display:flex; flex-wrap:wrap; gap:6px; }
   .chip { background:var(--card); border:1px solid var(--line); border-radius:999px; padding:3px 11px; font-size:12px; color:var(--mut); }
   .chip.mine { border-color:var(--good); color:var(--good); font-weight:700; }
@@ -74,6 +77,16 @@
 
   <h2>⚾ 경기 달력 <span class="small">(회색=월 휴무 · 파랑=홈경기 boost)</span></h2>
   <div class="cals" id="cals"></div>
+
+  <h2>🏷 태그 최종안 <span class="small">(플레이스 광고 태그에 복붙 — 태그가 광고 노출의 8할)</span></h2>
+  <div class="tagbox">
+    <div class="small" style="margin-bottom:6px">현재 대표키워드 (스마트플레이스 — 니치 완점 중이므로 <b>유지</b>): <span id="curkw" class="small">조회 중…</span></div>
+    <textarea id="tagta" readonly rows="4"></textarea>
+    <div style="margin-top:8px; display:flex; gap:8px; align-items:center">
+      <button onclick="copyTags()">📋 태그 전체 복사</button>
+      <span class="small" id="copymsg"></span>
+    </div>
+  </div>
 
   <h2>키워드 점령 현황 <span class="small" id="planmeta"></span></h2>
   <table id="plan">
@@ -159,6 +172,10 @@ async function loadPlan(){
     const r = await fetch('/api/place/tagplan'); const d = await r.json();
     if (d.error) throw new Error(d.error);
     $('#planmeta').textContent = '('+esc(d.generated)+' 조사, 월검색량=PC+모바일)';
+    const rec = d.recommendation||{};
+    const tags = [].concat(rec.tags_region||[], rec.tags_common||[], rec.tags_menu||[]);
+    $('#tagta').value = tags.join(', ');
+    $('#curkw').innerHTML = (d.current_keywords||[]).map(k=>'<b>'+esc(k)+'</b>').join(' · ') || '(조회 실패)';
     const stCls = s => s==='먹고있음' ? 'st-own' : (s==='노출중(하위)' ? 'st-edge' : (s==='점령대상' ? 'st-target' : 'small'));
     const rows = (d.rows||[]).filter(x=>x.total>=50).slice(0,30);
     $('#plan tbody').innerHTML = rows.map(x => {
@@ -192,6 +209,14 @@ async function loadRanks(){
     $('#ranks tbody').innerHTML = '<tr><td colspan="3" style="color:var(--bad)">오류: '+esc(e.message)+'</td></tr>';
   }
   $('#spin').textContent = '';
+}
+
+function copyTags(){
+  const ta = $('#tagta');
+  ta.select();
+  navigator.clipboard.writeText(ta.value).then(
+    () => { $('#copymsg').textContent = '복사됨 ✓'; setTimeout(()=>$('#copymsg').textContent='', 2000); },
+    () => { document.execCommand('copy'); $('#copymsg').textContent = '복사됨 ✓'; });
 }
 
 loadStatus(); loadRanks(); loadPlan();

@@ -208,13 +208,23 @@ def register(app, templates, require_auth):
 
     @app.get("/api/place/tagplan")
     def place_tagplan(session: Optional[str] = Cookie(None)):
-        """사직점 태그/키워드 점령 플랜 (scripts/sajik_tag_plan.py 산출물)."""
+        """사직점 태그/키워드 점령 플랜 (scripts/sajik_tag_plan.py 산출물) + 현재 대표키워드 라이브."""
         require_auth(session)
         plan = _cfg("sajik_tag_plan.json")
         if not plan:
             return JSONResponse({"error": "sajik_tag_plan.json 없음 — "
                                  "python scripts/sajik_tag_plan.py 실행 필요"},
                                 status_code=404)
+        try:
+            pid = str(_cfg("place_rank_keywords.json").get("place_id"))
+            r = requests.get(f"https://m.place.naver.com/restaurant/{pid}/home",
+                             headers={"User-Agent": UA}, timeout=12)
+            r.encoding = "utf-8"
+            m = re.search(r'"keywordList":\s*(\[[^\]]*\])', r.text)
+            if m:
+                plan["current_keywords"] = json.loads(m.group(1))
+        except Exception as e:
+            logger.warning("현재 대표키워드 조회 실패: %s", e)
         return JSONResponse(plan)
 
     @app.get("/api/place/ranks")
