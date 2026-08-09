@@ -1225,3 +1225,23 @@ def healthz():
         "cwd": os.getcwd(),
         "root": str(ROOT),
     }
+
+
+# ─────────────────────────────────────────────
+# 사직 파워링크 자동입찰기 제어판 (web/bidder.py)
+# ─────────────────────────────────────────────
+try:
+    from web import bidder as _bidder
+    _bidder.register(app, TEMPLATES, _require_auth, _require_action_auth)
+except Exception as _e:
+    logger.warning("bidder 등록 실패: %s", _e)
+
+
+# ─────────────────────────────────────────────
+# 사직 플레이스 현황 (web/place.py)
+# ─────────────────────────────────────────────
+try:
+    from web import place as _place
+    _place.register(app, TEMPLATES, _require_auth)
+except Exception as _e:
+    logger.warning("place 등록 실패: %s", _e)

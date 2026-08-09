@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>사직 자동입찰기</title>
+<style>
+  :root { --bg:#0f1115; --card:#1a1d24; --line:#2a2f3a; --txt:#e6e9ef; --mut:#8b93a3; --accent:#4f8cff; --good:#34c759; --warn:#ff9f0a; --bad:#ff453a; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt); font:13.5px/1.5 -apple-system,"Segoe UI",Roboto,"Apple SD Gothic Neo",sans-serif; }
+  .wrap { max-width:1240px; margin:0 auto; padding:16px; }
+  h1 { font-size:20px; margin:8px 0; }
+  .note { color:var(--mut); font-size:12.5px; margin:4px 0 14px; }
+  .bar { display:flex; flex-wrap:wrap; gap:10px; align-items:center; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px 14px; margin-bottom:14px; }
+  .bar .lbl { color:var(--mut); font-size:12px; }
+  .bar b { font-size:16px; }
+  input,select,button { font:inherit; color:var(--txt); }
+  input[type=number],select { background:#0c0e12; border:1px solid var(--line); border-radius:8px; padding:6px 8px; }
+  input[type=number]{ width:70px; text-align:right; }
+  input[type=checkbox]{ width:17px; height:17px; accent-color:var(--accent); cursor:pointer; }
+  button { background:var(--accent); border:0; border-radius:8px; padding:7px 12px; color:#fff; cursor:pointer; }
+  button.ghost { background:transparent; border:1px solid var(--line); color:var(--txt); }
+  button:active { transform:translateY(1px); }
+  .stepsel { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  .stepsel button { background:transparent; color:var(--mut); border-radius:0; padding:6px 11px; }
+  .stepsel button.on { background:var(--accent); color:#fff; }
+  .bidcell { display:inline-flex; align-items:center; gap:3px; }
+  .bidcell button { background:#2a2f3a; color:var(--txt); padding:5px 9px; border-radius:7px; font-weight:700; line-height:1; }
+  .bidcell button:hover { background:#39404e; }
+  table { width:100%; border-collapse:collapse; background:var(--card); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+  th,td { padding:8px 7px; border-bottom:1px solid var(--line); text-align:right; white-space:nowrap; }
+  th:nth-child(2),td:nth-child(2) { text-align:left; }
+  th { color:var(--mut); font-weight:600; font-size:11.5px; }
+  tr:last-child td { border-bottom:0; }
+  .kw { font-weight:600; }
+  .vol { color:var(--mut); }
+  .pill { font-size:11px; padding:1px 7px; border-radius:999px; }
+  .ok { background:rgba(52,199,89,.15); color:var(--good); }
+  .rev { background:rgba(255,159,10,.15); color:var(--warn); }
+  .estcell { font-weight:700; }
+  .rnk-good { color:var(--good); } .rnk-mid{ color:var(--warn);} .rnk-bad{color:var(--bad);}
+  .meas { color:var(--mut); font-size:12px; transition:background .3s; }
+  .flash-up { background:rgba(79,140,255,.25); }
+  .small { font-size:12px; color:var(--mut); }
+  #log { margin-top:12px; font-size:12.5px; color:var(--mut); white-space:pre-wrap; min-height:18px; }
+  .tabs { display:flex; gap:6px; margin-bottom:12px; }
+  .tabs a { padding:6px 12px; border-radius:8px; background:var(--card); border:1px solid var(--line); color:var(--mut); text-decoration:none; font-size:13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="tabs">
+    <a href="/">← 대시보드</a>
+    <a href="/bidder" style="color:var(--txt)">자동입찰기 · 파워링크</a>
+    <a href="/place">플레이스 현황</a>
+  </div>
+  <h1>🎯 사직 자동입찰기</h1>
+  <p class="note">지역타겟 <b>부산</b>. <b>예상순위</b>=입찰 바꾸면 즉시 갱신(추정곡선+부산보정). <b>실측</b>=최근2일 평균(후행). 정확한 실시간은 네이버 노출현황보기(UI). 봇 매일 10·18시 자동.</p>
+
+  <div class="bar">
+    <span class="lbl">조절 단위</span>
+    <span class="stepsel" id="stepsel">
+      <button data-u="10" class="on">10원</button><button data-u="50">50원</button><button data-u="100">100원</button>
+    </span>
+    <span style="width:6px"></span>
+    <span class="lbl">플레이스</span>
+    <span class="bidcell"><button onclick="placeBump(-1)">−</button><b id="placeBid">–</b><button onclick="placeBump(1)">＋</button></span>
+    <span class="small" id="placeStat"></span>
+    <span style="flex:1"></span>
+    <span class="lbl">비즈머니</span> <b id="money">–</b>원
+    <button onclick="refreshRanks()">📊 실측순위 갱신</button>
+    <button class="ghost" onclick="run(1)">봇 시뮬</button>
+    <button onclick="run(0)">봇 실행</button>
+    <button class="ghost" onclick="load()">새로고침</button>
+  </div>
+  <div class="small" style="margin-bottom:8px">☑ 체크한 키워드만 봇 실행 (체크 없으면 전체)</div>
+
+  <div id="warn" class="note" style="color:var(--warn)"></div>
+
+  <table id="tbl">
+    <thead><tr>
+      <th><input type="checkbox" id="all" onclick="toggleAll(this)"></th>
+      <th>키워드</th><th>검색량</th><th>상태</th><th>입찰가</th>
+      <th>예상순위<br><span class="small">즉시·부산</span></th>
+      <th>실측<br><span class="small">2일</span></th>
+      <th>노출</th><th>클릭</th><th>소진</th><th>목표</th><th>상한</th>
+    </tr></thead>
+    <tbody id="rows"><tr><td colspan="12" class="small">불러오는 중…</td></tr></tbody>
+  </table>
+  <div id="log"></div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+let STATE = null, STEP_UNIT = 10;
+
+$('#stepsel').addEventListener('click', e=>{
+  if(e.target.tagName!=='BUTTON') return;
+  STEP_UNIT = parseInt(e.target.dataset.u);
+  [...$('#stepsel').children].forEach(b=>b.classList.toggle('on', b===e.target));
+});
+
+function won(n){ return (n==null?'–':Number(n).toLocaleString()); }
+function rnkCls(r){ if(!r) return ''; if(r<=2.4) return 'rnk-good'; if(r<=3.6) return 'rnk-mid'; return 'rnk-bad'; }
+
+// 입찰→예상순위 (곡선 + 부산 실측 보정)
+function estPos(bid, c){ for(let p=1;p<=5;p++){ if(c[p] && bid>=c[p]) return p; } return 5.5; }
+function calRank(row, bid){
+  const c = row.curve||{}; if(!Object.keys(c).length) return null;
+  let p = estPos(bid, c);
+  if(row.rnk && row.bid){ p += (row.rnk - estPos(row.bid, c)); }   // 부산 보정 오프셋
+  return Math.max(1, p);
+}
+function rowByKw(kw){ return STATE.rows.find(r=>r.keyword===kw); }
+function updateEst(tr){
+  const kw=tr.dataset.kw, bid=parseInt(tr.querySelector('.bidinput')?.value||0);
+  const cell=tr.querySelector('.estcell'); if(!cell) return;
+  const r=calRank(rowByKw(kw), bid);
+  cell.textContent = r? r.toFixed(1) : '–';
+  cell.className='estcell '+rnkCls(r);
+}
+
+async function load(){
+  const r = await fetch('/api/bidder/status'); const d = await r.json();
+  if(d.error){ $('#log').textContent='오류: '+d.error; return; }
+  STATE = d;
+  $('#placeBid').textContent = won(d.place_bid);
+  $('#placeStat').textContent = d.place_status ? '('+d.place_status+')' : '';
+  $('#money').textContent = won(d.bizmoney ? Math.round(d.bizmoney) : null);
+  $('#warn').textContent = d.writable ? '' : '⚠ KV 저장소 미설정 — 목표/상한 영구저장 안 됨(cron은 기본값). 입찰·플레이스는 정상.';
+  const posOpts = p => [1,2,3,4,5].map(i=>`<option value="${i}" ${i==p?'selected':''}>${i}위</option>`).join('');
+  $('#rows').innerHTML = d.rows.map(x=>`
+    <tr data-kw="${x.keyword}" data-kid="${x.kid||''}" data-gid="${x.gid||''}">
+      <td><input type="checkbox" class="chk" ${x.kid?'':'disabled'}></td>
+      <td class="kw">${x.keyword}</td>
+      <td class="vol">${won(x.vol)}</td>
+      <td>${x.registered ? (x.inspect==='APPROVED'?'<span class="pill ok">노출</span>':'<span class="pill rev">검토중</span>') : '<span class="pill rev">미등록</span>'}</td>
+      <td><span class="bidcell">
+        <button onclick="bump(this,-1)" ${x.kid?'':'disabled'}>−</button>
+        <input type="number" class="bidinput" value="${x.bid||''}" ${x.kid?'':'disabled'} onchange="setBid(this)">
+        <button onclick="bump(this,1)" ${x.kid?'':'disabled'}>＋</button>
+      </span></td>
+      <td class="estcell">–</td>
+      <td class="meas ${rnkCls(x.rnk)}">${x.rnk? x.rnk.toFixed(1):'–'}</td>
+      <td>${won(x.imp)}</td><td>${won(x.clk)}</td><td>${won(x.cost)}</td>
+      <td><select onchange="setTarget(this)">${posOpts(x.pos)}</select></td>
+      <td><input type="number" class="cap" step="50" value="${x.cap}" onchange="setTarget(this)"></td>
+    </tr>`).join('');
+  document.querySelectorAll('#rows tr').forEach(updateEst);
+}
+
+async function post(url, body){
+  const r = await fetch(url,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams(body)});
+  return r.json();
+}
+function flash(m){ $('#log').textContent = new Date().toLocaleTimeString()+' · '+m; }
+
+function toggleAll(cb){ document.querySelectorAll('#rows .chk:not(:disabled)').forEach(c=>c.checked=cb.checked); }
+function checkedKws(){ return [...document.querySelectorAll('#rows tr')].filter(tr=>tr.querySelector('.chk')?.checked).map(tr=>tr.dataset.kw); }
+
+async function refreshRanks(){
+  const trs=[...document.querySelectorAll('#rows tr[data-kid]')].filter(t=>t.dataset.kid);
+  const kids=trs.map(t=>t.dataset.kid); if(!kids.length){ flash('등록 키워드 없음'); return; }
+  flash('실측순위 조회 중…');
+  const d=await post('/api/bidder/ranks',{kids:kids.join(',')});
+  if(d.error){ flash('오류: '+d.error); return; }
+  let n=0;
+  trs.forEach(tr=>{ const r=d[tr.dataset.kid]; if(r===undefined) return;
+    const c=tr.querySelector('.meas'); c.textContent=r?r.toFixed(1):'–'; c.className='meas '+rnkCls(r);
+    c.classList.add('flash-up'); setTimeout(()=>c.classList.remove('flash-up'),600);
+    rowByKw(tr.dataset.kw).rnk=r; updateEst(tr); n++; });
+  flash(`실측순위 갱신 ${n}개 (모바일·부산). 예상순위도 보정 반영.`);
+}
+
+function bump(btn,dir){
+  const inp=btn.parentElement.querySelector('input');
+  let v=(parseInt(inp.value)||0)+dir*STEP_UNIT; if(v<70)v=70;
+  inp.value=v; updateEst(btn.closest('tr')); setBid(inp);
+}
+async function setBid(inp){
+  const tr=inp.closest('tr'); updateEst(tr);
+  const kid=tr.dataset.kid,gid=tr.dataset.gid;
+  if(!kid){ flash('미등록 — 입찰 변경 불가'); return; }
+  const d=await post('/api/bidder/keyword-bid',{kid,gid,bid:inp.value});
+  flash(d.ok? `${tr.dataset.kw} 입찰 → ${inp.value}원 (예상 ${tr.querySelector('.estcell').textContent}위)` : '실패: '+d.error);
+}
+async function setTarget(el){
+  const tr=el.closest('tr'); const kw=tr.dataset.kw;
+  const pos=tr.querySelector('select').value, cap=tr.querySelector('input.cap').value;
+  const d=await post('/api/bidder/target',{keyword:kw,pos,cap});
+  flash(d.ok? `${kw} 목표 ${pos}위 / 상한 ${cap}` : '실패: '+d.error);
+}
+function placeBump(dir){
+  let v=(parseInt(STATE&&STATE.place_bid)||0)+dir*STEP_UNIT; if(v<50)v=50;
+  post('/api/bidder/place-bid',{bid:v}).then(d=>{ flash(d.ok?`플레이스 입찰 → ${d.place_bid}원`:'실패: '+d.error); load(); });
+}
+async function run(dry){
+  const sel=checkedKws();
+  flash((dry?'시뮬':'실행')+' 중… '+(sel.length?`체크 ${sel.length}개`:'전체'));
+  const d=await post('/api/bidder/run',{dry, only: sel.join('||')});
+  if(!d.ok){ flash('실패: '+d.error); return; }
+  const c=d.changes||[];
+  flash((dry?'[시뮬] ':'[적용] ')+(c.length? c.map(x=>`${x.keyword} ${x.old}→${x.new}(${x.reason})`).join(' · ') : '변경 없음'));
+  if(!dry) load();
+}
+load();
+</script>
+</body>
+</html>

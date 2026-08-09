@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>사직 플레이스 현황</title>
+<style>
+  :root { --bg:#0f1115; --card:#1a1d24; --line:#2a2f3a; --txt:#e6e9ef; --mut:#8b93a3; --accent:#4f8cff; --good:#34c759; --warn:#ff9f0a; --bad:#ff453a; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt); font:13.5px/1.5 -apple-system,"Segoe UI",Roboto,"Apple SD Gothic Neo",sans-serif; }
+  .wrap { max-width:1100px; margin:0 auto; padding:16px; }
+  h1 { font-size:20px; margin:8px 0; }
+  h2 { font-size:15px; margin:22px 0 10px; }
+  .note { color:var(--mut); font-size:12.5px; margin:4px 0 14px; }
+  .tabs { display:flex; gap:6px; margin-bottom:12px; flex-wrap:wrap; }
+  .tabs a { padding:6px 12px; border-radius:8px; background:var(--card); border:1px solid var(--line); color:var(--mut); text-decoration:none; font-size:13px; }
+  .bar { display:flex; flex-wrap:wrap; gap:14px; align-items:center; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px 14px; margin-bottom:14px; }
+  .bar .lbl { color:var(--mut); font-size:12px; }
+  .bar b { font-size:16px; }
+  .pill { font-size:11.5px; padding:2px 9px; border-radius:999px; font-weight:700; }
+  .on  { background:rgba(52,199,89,.15); color:var(--good); }
+  .off { background:rgba(255,69,58,.15); color:var(--bad); }
+  .badge { background:rgba(79,140,255,.15); color:var(--accent); }
+  .sched { display:flex; gap:2px; overflow-x:auto; padding:10px; background:var(--card); border:1px solid var(--line); border-radius:12px; }
+  .cell { min-width:38px; text-align:center; border-radius:7px; padding:5px 2px; font-size:11px; background:#0c0e12; border:1px solid var(--line); }
+  .cell .h { color:var(--mut); font-size:10px; }
+  .cell .b { font-weight:700; margin-top:2px; }
+  .cell.offh { opacity:.32; }
+  .cell.now { border-color:var(--accent); background:rgba(79,140,255,.12); }
+  .cell.boost .b { color:var(--warn); }
+  table { width:100%; border-collapse:collapse; background:var(--card); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+  th,td { padding:8px 10px; border-bottom:1px solid var(--line); text-align:left; white-space:nowrap; }
+  th { color:var(--mut); font-weight:600; font-size:11.5px; }
+  tr:last-child td { border-bottom:0; }
+  .r-good { color:var(--good); font-weight:700; } .r-mid{ color:var(--warn); font-weight:700; } .r-bad{ color:var(--mut); }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; }
+  .chip { background:var(--card); border:1px solid var(--line); border-radius:999px; padding:3px 11px; font-size:12px; color:var(--mut); }
+  .chip.mine { border-color:var(--good); color:var(--good); font-weight:700; }
+  .chip.rival { border-color:var(--warn); color:var(--warn); }
+  .small { font-size:12px; color:var(--mut); }
+  #spin { color:var(--mut); font-size:12.5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="tabs">
+    <a href="/">← 대시보드</a>
+    <a href="/bidder">자동입찰기 · 파워링크</a>
+    <a href="/place" style="color:var(--txt)">플레이스 현황</a>
+  </div>
+  <h1>🏟 사직 플레이스 현황</h1>
+  <p class="note">오토플레이스 자동운영(매시간 입찰조정 + 영업 10~22시 ON/OFF + 월 휴무 + 홈경기 boost) · 순위는 <b>광고 제외 오가닉</b>, 야구장앞 좌표 기준 실시간 조회.</p>
+
+  <div class="bar" id="statusbar">
+    <span class="lbl">불러오는 중…</span>
+  </div>
+
+  <h2>오늘 자동입찰 스케줄</h2>
+  <div class="sched" id="sched"></div>
+  <div class="small" style="margin-top:6px" id="gameinfo"></div>
+
+  <h2>지도 오가닉 순위 <span id="spin"></span></h2>
+  <table id="ranks">
+    <thead><tr><th>키워드</th><th>순위</th><th>1위 업체</th></tr></thead>
+    <tbody><tr><td colspan="3" class="small">조회 중… (실시간이라 몇 초 걸립니다)</td></tr></tbody>
+  </table>
+
+  <h2>‘사직 맛집’ 플레이스광고 집행 업체 <span class="small" id="adcount"></span></h2>
+  <div class="chips" id="ads"><span class="small">조회 중…</span></div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+
+function esc(s){ const d=document.createElement('div'); d.textContent=s||''; return d.innerHTML; }
+
+async function loadStatus(){
+  const r = await fetch('/api/place/status'); const d = await r.json();
+  if (d.error){ $('#statusbar').innerHTML = '<span class="lbl" style="color:var(--bad)">오류: '+esc(d.error)+'</span>'; return; }
+  const live = d.live||{};
+  const onAir = live.status==='ELIGIBLE' && !live.userLock;
+  let html = '';
+  html += '<span class="pill '+(onAir?'on':'off')+'">'+(onAir?'광고 ON':'광고 OFF')+'</span>';
+  html += '<span><span class="lbl">현재 입찰가</span> <b>'+(live.bid!=null?live.bid.toLocaleString()+'원':'–')+'</b></span>';
+  html += '<span><span class="lbl">일예산</span> <b>'+(live.dailyBudget!=null?live.dailyBudget.toLocaleString()+'원':'–')+'</b></span>';
+  html += '<span><span class="lbl">영업</span> <b>'+esc(d.on_hours||'-')+'시</b></span>';
+  if (d.off_day) html += '<span class="pill off">오늘 휴무</span>';
+  if (d.home_game_today) html += '<span class="pill badge">⚾ 오늘 홈경기 (boost)</span>';
+  $('#statusbar').innerHTML = html;
+
+  $('#sched').innerHTML = (d.schedule||[]).map(c => {
+    const cls = ['cell', c.on?'':'offh', c.h===d.now_hour?'now':''].join(' ');
+    return '<div class="'+cls+'"><div class="h">'+c.h+'시</div><div class="b">'+(c.on?c.bid:'OFF')+'</div></div>';
+  }).join('');
+
+  const up = d.upcoming_games||[];
+  $('#gameinfo').textContent = up.length
+    ? '⚾ 홈경기 예정(저녁 boost ×1.3): ' + up.map(s=>s.slice(5)).join(', ')
+    : '남은 홈경기 없음 — 야구 boost 자동 비활성.';
+}
+
+async function loadRanks(){
+  $('#spin').textContent = '⏳';
+  try{
+    const r = await fetch('/api/place/ranks'); const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    $('#ranks tbody').innerHTML = (d.rows||[]).map(x => {
+      let cls='r-bad', txt;
+      if (!x.ok) txt='조회실패';
+      else if (x.rank){ txt=x.rank+'위'; cls = x.rank<=3?'r-good':(x.rank<=10?'r-mid':'r-bad'); }
+      else txt=(x.list_size||0)+'위 밖';
+      return '<tr><td>'+esc(x.keyword)+'</td><td class="'+cls+'">'+txt+'</td><td class="small">'+esc(x.top1||'-')+'</td></tr>';
+    }).join('');
+    const ads = d.ads||[];
+    $('#adcount').textContent = '('+ads.length+'곳, '+esc(d.location||'')+' 기준)';
+    $('#ads').innerHTML = ads.length ? ads.map(a => {
+      const rival = /버거|burger/i.test(a.name) && !a.mine;
+      return '<span class="chip '+(a.mine?'mine':(rival?'rival':''))+'">'+(a.mine?'★ ':'')+esc(a.name)+'</span>';
+    }).join('') : '<span class="small">광고 없음 또는 조회실패</span>';
+  } catch(e){
+    $('#ranks tbody').innerHTML = '<tr><td colspan="3" style="color:var(--bad)">오류: '+esc(e.message)+'</td></tr>';
+  }
+  $('#spin').textContent = '';
+}
+
+loadStatus(); loadRanks();
+</script>
+</body>
+</html>

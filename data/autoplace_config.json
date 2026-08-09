@@ -1,0 +1,22 @@
+{
+  "_comment": "autoplace.py 설정. schedule: 요일별 시간대 입찰가 (HH-HH 구간, 24시 기준). default가 기본, mon~sun 키로 요일 오버라이드. event: dates_file의 날짜엔 boost_windows 구간에 배수 적용.",
+  "targets": [
+    {
+      "name": "사직점 플레이스",
+      "enabled": true,
+      "env_prefix": "SAJIK",
+      "adgroup_id": "grp-a001-06-000000068828400",
+      "on_hours": "10-22",
+      "off_days": ["mon"],
+      "bid_min": 70,
+      "bid_max": 600,
+      "schedule": {
+        "default": { "00-11": 100, "11-14": 300, "14-17": 150, "17-22": 450, "22-24": 200 }
+      },
+      "event": {
+        "dates_file": "data/lotte_home_games.json",
+        "boost_windows": { "16-23": 1.3 }
+      }
+    }
+  ]
+}
