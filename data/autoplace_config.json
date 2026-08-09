@@ -1,5 +1,5 @@
 {
- "_comment": "autoplace.py 설정. schedule: 요일별 시간대 입찰가 (HH-HH 구간, 24시 기준). default가 기본, mon~sun 키로 요일 오버라이드. event: dates_file의 날짜엔 boost_windows 구간에 배수 적용.",
+ "_comment": "autoplace.py 설정. schedule: 요일별 시간대 입찰가 (HH-HH 구간). 네이버 벤치마크(양식·부산 동래구) 평균 광고 노출 입찰가 160원 (2026-08-10 TIGER 확인) — 점심150/저녁200은 이 기준. event: dates_file 날짜엔 boost_windows 배수 적용.",
  "targets": [
   {
    "name": "사직점 플레이스",
