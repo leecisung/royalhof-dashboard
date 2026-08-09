@@ -83,9 +83,10 @@
     <div class="small" style="margin-bottom:6px">현재 대표키워드 (스마트플레이스 — 니치 완점 중이므로 <b>유지</b>): <span id="curkw" class="small">조회 중…</span></div>
     <textarea id="tagta" readonly rows="4"></textarea>
     <div style="margin-top:8px; display:flex; gap:8px; align-items:center">
-      <button onclick="copyTags()">📋 태그 전체 복사</button>
+      <button onclick="copyTags()">📋 최종 태그 50개 복사</button>
       <span class="small" id="copymsg"></span>
     </div>
+    <div id="tagdiff"></div>
   </div>
 
   <h2>키워드 점령 현황 <span class="small" id="planmeta"></span></h2>
@@ -173,9 +174,13 @@ async function loadPlan(){
     if (d.error) throw new Error(d.error);
     $('#planmeta').textContent = '('+esc(d.generated)+' 조사, 월검색량=PC+모바일)';
     const rec = d.recommendation||{};
-    const tags = [].concat(rec.tags_region||[], rec.tags_common||[], rec.tags_menu||[]);
+    const tags = rec.final_tags || [].concat(rec.tags_region||[], rec.tags_common||[], rec.tags_menu||[]);
     $('#tagta').value = tags.join(', ');
     $('#curkw').innerHTML = (d.current_keywords||[]).map(k=>'<b>'+esc(k)+'</b>').join(' · ') || '(조회 실패)';
+    const diff = [];
+    if (rec.remove) diff.push('<div class="small" style="margin-top:8px"><b style="color:var(--bad)">제거 '+Object.keys(rec.remove).length+'</b>: '+Object.keys(rec.remove).map(esc).join(', ')+'</div>');
+    if (rec.add) diff.push('<div class="small" style="margin-top:4px"><b style="color:var(--good)">추가 '+Object.keys(rec.add).length+'</b>: '+Object.entries(rec.add).map(([k,v])=>esc(k)+' <span style="opacity:.6">('+esc(v)+')</span>').join(', ')+'</div>');
+    $('#tagdiff').innerHTML = diff.join('');
     const stCls = s => s==='먹고있음' ? 'st-own' : (s==='노출중(하위)' ? 'st-edge' : (s==='점령대상' ? 'st-target' : 'small'));
     const rows = (d.rows||[]).filter(x=>x.total>=50).slice(0,30);
     $('#plan tbody').innerHTML = rows.map(x => {
