@@ -135,8 +135,21 @@ def register(app, require_auth):
             games = set(_cfg("lotte_home_games.json").get("dates", []))
             now = datetime.now(KST)
             today_str = now.strftime("%Y-%m-%d")
-            schedule = [{"h": h, "bid": _bid_at(target, now.replace(hour=h, minute=0), games),
+            off_today = DAY_KEYS[now.weekday()] in [str(d).lower()
+                                                    for d in target.get("off_days", [])]
+            bmin = int(target.get("bid_min", 50))
+            schedule = [{"h": h,
+                         "bid": bmin if off_today else
+                                _bid_at(target, now.replace(hour=h, minute=0), games),
                          "on": True} for h in range(24)]
+            groups = []
+            for t in cfg.get("targets", []):
+                try:
+                    gg = _naver_get(f"/ncc/adgroups/{t.get('adgroup_id')}")
+                    groups.append({"name": t.get("name"), "bid": gg.get("bidAmt"),
+                                   "on": not gg.get("userLock")})
+                except Exception:
+                    groups.append({"name": t.get("name"), "bid": None, "on": None})
             live = {}
             try:
                 gid = target.get("adgroup_id")
@@ -172,6 +185,7 @@ def register(app, require_auth):
                 "game_dates": sorted(games),
                 "off_days": [str(d).lower() for d in target.get("off_days", [])],
                 "schedule": schedule, "live": live, "bid_scale": scale,
+                "groups": groups,
             })
         except Exception as e:
             return JSONResponse({"error": str(e)}, status_code=500)
@@ -222,9 +236,13 @@ def register(app, require_auth):
             locs = cfg.get("locations") or [{"name": "기본", "x": cfg.get("x"), "y": cfg.get("y")}]
             loc = locs[0]
             keywords = cfg.get("keywords", [])
-            with ThreadPoolExecutor(max_workers=4) as ex:
+            with ThreadPoolExecutor(max_workers=2) as ex:
                 apollos = list(ex.map(
                     lambda kw: _fetch_apollo(kw, loc.get("x"), loc.get("y")), keywords))
+            for i, (kw, ap) in enumerate(zip(keywords, apollos)):   # 실패분 1회 재시도
+                if ap is None:
+                    time.sleep(1.0)
+                    apollos[i] = _fetch_apollo(kw, loc.get("x"), loc.get("y"))
             rows, ads = [], []
             for kw, apollo in zip(keywords, apollos):
                 items = _organic_list(apollo)
@@ -235,8 +253,22 @@ def register(app, require_auth):
                 if kw == ADS_PROBE_KEYWORD and apollo:
                     ads = [{"id": i, "name": n, "mine": i == pid}
                            for i, n in _ad_list(apollo)]
-            return JSONResponse({"place_name": cfg.get("place_name"),
-                                 "location": loc.get("name"), "rows": rows,
-                                 "ads_keyword": ADS_PROBE_KEYWORD, "ads": ads})
+            result = {"place_name": cfg.get("place_name"),
+                      "location": loc.get("name"), "rows": rows,
+                      "ads_keyword": ADS_PROBE_KEYWORD, "ads": ads}
+            cache_p = ROOT / "data" / "ranks_cache.json"
+            ok_cnt = sum(1 for r in rows if r.get("ok"))
+            if ok_cnt >= max(1, len(rows) // 2):
+                result["cached_at"] = datetime.now(KST).strftime("%m-%d %H:%M")
+                try:
+                    cache_p.write_text(json.dumps(result, ensure_ascii=False),
+                                       encoding="utf-8")
+                except Exception:
+                    pass
+            elif cache_p.exists():   # 절반 이상 실패 → 최근 성공본으로 대체
+                cached = json.loads(cache_p.read_text(encoding="utf-8"))
+                cached["stale"] = True
+                return JSONResponse(cached)
+            return JSONResponse(result)
         except Exception as e:
             return JSONResponse({"error": str(e)}, status_code=500)

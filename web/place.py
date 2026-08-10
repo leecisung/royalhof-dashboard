@@ -191,6 +191,15 @@ def register(app, templates, require_auth):
             except Exception:
                 pass
 
+            groups = []
+            for t in cfg.get("targets", []):
+                try:
+                    gg = _api()._request("GET", f"/ncc/adgroups/{t.get('adgroup_id')}")
+                    groups.append({"name": t.get("name"), "bid": gg.get("bidAmt"),
+                                   "on": not gg.get("userLock")})
+                except Exception:
+                    groups.append({"name": t.get("name"), "bid": None, "on": None})
+
             return JSONResponse({
                 "name": target.get("name"), "now_hour": now.hour,
                 "today": today_str, "day": DAY_KEYS[now.weekday()],
@@ -202,6 +211,7 @@ def register(app, templates, require_auth):
                 "game_dates": sorted(games),
                 "off_days": [str(d).lower() for d in target.get("off_days", [])],
                 "schedule": schedule, "live": live, "bid_scale": scale,
+                "groups": groups,
             })
         except Exception as e:
             return JSONResponse({"error": str(e)}, status_code=500)

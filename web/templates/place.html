@@ -65,7 +65,7 @@
     <a href="/place" style="color:var(--txt)">플레이스 현황</a>
   </div>
   <h1>🏟 사직 플레이스 현황</h1>
-  <p class="note">오토플레이스 자동운영(매시간 입찰조정 + 영업 10~22시 ON/OFF + 월 휴무 + 홈경기 boost) · 순위는 <b>광고 제외 오가닉</b>, 야구장앞 좌표 기준 실시간 조회.</p>
+  <p class="note">멀티그룹 상시 ON — 각 그룹이 자기 시간대만 제값 입찰, 나머지는 최저가 50원(끄면 노출 재개 지연이라 안 끔) · 월 휴무=종일 50원 · 홈경기 저녁 boost · 순위는 <b>광고 제외 오가닉</b>, 야구장앞 좌표 실시간.</p>
 
   <div class="bar" id="statusbar">
     <span class="lbl">불러오는 중…</span>
@@ -124,6 +124,10 @@ async function loadStatus(){
   if (d.home_game_today) html += '<span class="pill badge">⚾ 오늘 홈경기 (boost)</span>';
   const y = live.yday;
   if (y) html += '<span class="small">어제: 노출 '+y.imp.toLocaleString()+' · 클릭 '+y.clk+' · '+y.cost.toLocaleString()+'원'+(y.clk?' · CPC '+y.cpc.toLocaleString()+'원':'')+'</span>';
+  if (d.groups && d.groups.length){
+    html += '<span style="flex-basis:100%"></span><span class="lbl">그룹별 현재 입찰</span>';
+    html += d.groups.map(g => '<span class="small">'+(g.on===false?'⏸ ':'')+esc(g.name)+' <b>'+(g.bid!=null?g.bid+'원':'-')+'</b></span>').join('');
+  }
   $('#statusbar').innerHTML = html;
 
   $('#sched').innerHTML = (d.schedule||[]).map(c => {
