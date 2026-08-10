@@ -135,13 +135,18 @@ def register(app, require_auth):
             games = set(_cfg("lotte_home_games.json").get("dates", []))
             now = datetime.now(KST)
             today_str = now.strftime("%Y-%m-%d")
-            off_today = DAY_KEYS[now.weekday()] in [str(d).lower()
-                                                    for d in target.get("off_days", [])]
-            bmin = int(target.get("bid_min", 50))
-            schedule = [{"h": h,
-                         "bid": bmin if off_today else
-                                _bid_at(target, now.replace(hour=h, minute=0), games),
+            day_key = DAY_KEYS[now.weekday()]
+
+            def _day_cells(t):
+                off = day_key in [str(d).lower() for d in t.get("off_days", [])]
+                bmin = int(t.get("bid_min", 50))
+                return [{"h": h,
+                         "bid": bmin if off else _bid_at(t, now.replace(hour=h, minute=0), games),
                          "on": True} for h in range(24)]
+
+            schedule = _day_cells(target)
+            schedules = [{"name": t.get("name"), "enabled": bool(t.get("enabled")),
+                          "cells": _day_cells(t)} for t in cfg.get("targets", [])]
             groups = []
             for t in cfg.get("targets", []):
                 try:
@@ -184,7 +189,7 @@ def register(app, require_auth):
                 "upcoming_games": sorted(d for d in games if d >= today_str)[:10],
                 "game_dates": sorted(games),
                 "off_days": [str(d).lower() for d in target.get("off_days", [])],
-                "schedule": schedule, "live": live, "bid_scale": scale,
+                "schedule": schedule, "schedules": schedules, "live": live, "bid_scale": scale,
                 "groups": groups,
             })
         except Exception as e:
@@ -223,7 +228,11 @@ def register(app, require_auth):
                         continue
                     if d not in dates:
                         dates.append(d)
-                    hist.setdefault(kw, {})[d] = int(rank) if rank else None
+                    ads_v = row.get("ads")
+                    hist.setdefault(kw, {})[d] = {
+                        "r": int(rank) if rank else None,
+                        "a": int(ads_v) if ads_v not in (None, "") else None,
+                    }
         except Exception as e:
             return JSONResponse({"error": str(e)}, status_code=500)
         return JSONResponse({"dates": sorted(set(dates))[-14:], "series": hist})
@@ -247,7 +256,10 @@ def register(app, require_auth):
             for kw, apollo in zip(keywords, apollos):
                 items = _organic_list(apollo)
                 rank = next((i for i, (id_, _) in enumerate(items, 1) if id_ == pid), None)
+                ads_n = len(_ad_list(apollo))
                 rows.append({"keyword": kw, "rank": rank, "list_size": len(items),
+                             "ads_n": ads_n,
+                             "rank_with_ads": (rank + ads_n) if rank else None,
                              "top1": items[0][1] if items else None,
                              "ok": apollo is not None})
                 if kw == ADS_PROBE_KEYWORD and apollo:
