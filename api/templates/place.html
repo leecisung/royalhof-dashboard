@@ -71,8 +71,8 @@
     <span class="lbl">불러오는 중…</span>
   </div>
 
-  <h2>오늘 자동입찰 스케줄</h2>
-  <div class="sched" id="sched"></div>
+  <h2>오늘 자동입찰 스케줄 <span class="small">(그룹별 · 슬롯 밖은 최저가 50원 대기)</span></h2>
+  <div id="schedGroups"></div>
   <div class="small" style="margin-top:6px" id="gameinfo"></div>
 
   <h2>⚾ 경기 달력 <span class="small">(회색=월 휴무 · 파랑=홈경기 boost)</span></h2>
@@ -89,7 +89,7 @@
     <div id="tagdiff"></div>
   </div>
 
-  <h2>키워드 점령 현황 <span class="small" id="planmeta"></span> <span class="small">— 매일 08:30 요일별 순위 기록</span></h2>
+  <h2>키워드 점령 현황 <span class="small" id="planmeta"></span> <span class="small">— 매일 08:30 요일별 기록 · 괄호=광고 포함 시 순위</span></h2>
   <div style="overflow-x:auto"><table id="plan">
     <tbody><tr><td class="small">불러오는 중…</td></tr></tbody>
   </table></div>
@@ -130,9 +130,16 @@ async function loadStatus(){
   }
   $('#statusbar').innerHTML = html;
 
-  $('#sched').innerHTML = (d.schedule||[]).map(c => {
-    const cls = ['cell', c.on?'':'offh', c.h===d.now_hour?'now':''].join(' ');
-    return '<div class="'+cls+'"><div class="h">'+c.h+'시</div><div class="b">'+(c.on?c.bid:'OFF')+'</div></div>';
+  const scheds = d.schedules && d.schedules.length ? d.schedules :
+                 [{name: d.name, enabled: true, cells: d.schedule||[]}];
+  $('#schedGroups').innerHTML = scheds.map(sg => {
+    const strip = (sg.cells||[]).map(c => {
+      const hot = c.bid > 60;
+      const cls = ['cell', hot?'':'offh', c.h===d.now_hour?'now':''].join(' ');
+      return '<div class="'+cls+'"><div class="h">'+c.h+'시</div><div class="b">'+c.bid+'</div></div>';
+    }).join('');
+    return '<div style="margin-bottom:10px"><div class="small" style="margin:4px 0">'
+      + (sg.enabled?'':'⏸ ') + esc(sg.name||'') + '</div><div class="sched">' + strip + '</div></div>';
   }).join('');
 
   const up = d.upcoming_games||[];
@@ -202,8 +209,11 @@ async function loadPlan(){
       const m = series[x.kw]||{};
       const cells = dates.map(dt=>{
         const v = m[dt];
-        const cls = v==null ? 'small' : (v<=3 ? 'r-good' : (v<=10 ? 'r-mid' : ''));
-        return '<td class="'+cls+'">'+(v==null?'–':v)+'</td>';
+        const r = (v && typeof v === 'object') ? v.r : v;
+        const a = (v && typeof v === 'object') ? v.a : null;
+        const cls = r==null ? 'small' : (r<=3 ? 'r-good' : (r<=10 ? 'r-mid' : ''));
+        const txt = r==null ? '–' : (a!=null ? r+' <span class="small">('+(r+a)+')</span>' : r);
+        return '<td class="'+cls+'">'+txt+'</td>';
       }).join('');
       return '<tr><td>'+esc(x.kw)+'</td><td>'+x.total.toLocaleString()+'</td>'+cells+'<td class="'+stCls(x.status)+'">'+esc(x.status)+'</td></tr>';
     }).join('');
@@ -221,7 +231,10 @@ async function loadRanks(){
     $('#ranks tbody').innerHTML = (d.rows||[]).map(x => {
       let cls='r-bad', txt;
       if (!x.ok) txt='조회실패';
-      else if (x.rank){ txt=x.rank+'위'; cls = x.rank<=3?'r-good':(x.rank<=10?'r-mid':'r-bad'); }
+      else if (x.rank){
+        txt = x.rank+'위' + (x.rank_with_ads ? ' <span class="small">(광고포함 '+x.rank_with_ads+'위)</span>' : '');
+        cls = x.rank<=3?'r-good':(x.rank<=10?'r-mid':'r-bad');
+      }
       else txt=(x.list_size||0)+'위 밖';
       const vol = VOL[x.keyword.replace(/\s+/g,'')];
       return '<tr><td>'+esc(x.keyword)+'</td><td>'+(vol?vol.toLocaleString():'-')+'</td><td class="'+cls+'">'+txt+'</td><td class="small">'+esc(x.top1||'-')+'</td></tr>';

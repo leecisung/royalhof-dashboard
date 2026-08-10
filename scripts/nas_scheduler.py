@@ -55,9 +55,7 @@ def main():
         if now.weekday() == 0 and now.hour >= 7 and done.get("lotte") != dkey:
             done["lotte"] = dkey
             run("update_lotte_games.py")
-        if (now.hour, now.minute) >= (8, 30) and done.get("watch") != dkey:
-            done["watch"] = dkey
-            run("place_watch.py --no-push")
+        # place_watch는 PC 담당 (git push로 Vercel 대시보드 갱신 필요)
         time.sleep(30)
 
 

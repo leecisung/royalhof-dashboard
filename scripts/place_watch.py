@@ -46,6 +46,7 @@ UA = ("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
 
 
 def fetch_rank(query: str, x: str, y: str, pid: str):
+    """(오가닉순위, 목록크기, 광고수) — 광고수는 괄호(광고포함 순위) 표시용."""
     url = (f"https://m.place.naver.com/restaurant/list"
            f"?query={urllib.parse.quote(query)}&x={x}&y={y}")
     try:
@@ -53,14 +54,22 @@ def fetch_rank(query: str, x: str, y: str, pid: str):
         r.encoding = "utf-8"
         m = re.search(r"window\.__APOLLO_STATE__\s*=\s*(\{.*?\});", r.text, re.S)
         if not m:
-            return None, -1
+            return None, -1, None
         d = json.loads(m.group(1))
         ids = [str(v.get("id")) for k, v in d.items()
                if k.startswith("PlaceListBusinessesItem:")]
-        return (ids.index(pid) + 1 if pid in ids else None), len(ids)
+        ads_n, seen = 0, set()
+        for k, v in d.get("ROOT_QUERY", {}).items():
+            if k.startswith("adBusinesses"):
+                items = v.get("items") if isinstance(v, dict) else v
+                for it in (items if isinstance(items, list) else []):
+                    if isinstance(it, dict) and it.get("__ref") and it["__ref"] not in seen:
+                        seen.add(it["__ref"])
+                        ads_n += 1
+        return (ids.index(pid) + 1 if pid in ids else None), len(ids), ads_n
     except Exception as e:
         logger.warning("'%s' 조회 실패: %s", query, e)
-        return None, -1
+        return None, -1, None
 
 
 def fetch_current_keywords(pid: str) -> list:
@@ -77,7 +86,8 @@ def fetch_current_keywords(pid: str) -> list:
 
 def git_push(paths: list):
     def run(*args):
-        return subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True)
+        return subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True,
+                              encoding="utf-8", errors="replace")
     run("add", *paths)
     if run("diff", "--cached", "--quiet").returncode == 0:
         logger.info("git: 변경 없음")
@@ -119,9 +129,10 @@ def main():
     # 1. 순위 조회 + 변동 감지 (알림은 config 키워드만, 기록은 전체)
     ranks, rows = {}, []
     for kw in all_kws:
-        rank, size = fetch_rank(kw, loc.get("x"), loc.get("y"), pid)
+        rank, size, ads_n = fetch_rank(kw, loc.get("x"), loc.get("y"), pid)
         ranks[kw] = rank
-        rows.append([today, kw, loc.get("name"), rank if rank else "", size, ""])
+        rows.append([today, kw, loc.get("name"), rank if rank else "", size, "",
+                     ads_n if ads_n is not None else ""])
         old = prev_ranks.get(kw)
         shown = f"{rank}위" if rank else "밖"
         logger.info("  %s → %s (이전 %s)", kw, shown, f"{old}위" if old else "밖/신규")
@@ -148,7 +159,7 @@ def main():
     with open(HISTORY, "a", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
         if new_file:
-            w.writerow(["date", "keyword", "location", "rank", "list_size", "top1"])
+            w.writerow(["date", "keyword", "location", "rank", "list_size", "top1", "ads"])
         w.writerows(rows)
 
     state["ranks"] = ranks
